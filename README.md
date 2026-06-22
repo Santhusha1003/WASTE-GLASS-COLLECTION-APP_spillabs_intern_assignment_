@@ -1,17 +1,23 @@
-# waste_glass_collection_app
+# Waste Glass Collection App
 
-A new Flutter project.
+Mobile Intern Technical Assignment
 
-## Getting Started
+## Technologies
 
-This project is a starting point for a Flutter application.
+Frontend:
+- Flutter
 
-A few resources to get you started if this is your first Flutter project:
+Backend:
+- .NET Web API
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+Database:
+- SQLite
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+
+## Features
+
+- Supplier route management
+- Barcode scanning
+- Offline collection saving
+- Trip report
+- Data synchronization
