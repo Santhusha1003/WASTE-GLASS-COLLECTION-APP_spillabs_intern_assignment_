@@ -6,59 +6,79 @@ namespace WasteGlassAPI.Services;
 
 public static class RouteScheduler
 {
-    public static async Task<WasteGlassRoute> FindAvailableRouteAsync(AppDbContext context)
+    private const int MaxStopsPerRoute = 5;
+
+    public static async Task<WasteGlassRoute> GetAvailableRouteAsync(AppDbContext context)
     {
-        var routeDate = DateTime.Today;
+        var routeDate = await FindAvailableRouteDateStartingFrom(context, DateTime.Today);
+        return await FindOrCreateRouteAsync(context, routeDate);
+    }
+
+    public static async Task<DateTime> FindAvailableRouteDateStartingFrom(
+        AppDbContext context,
+        DateTime startDate)
+    {
+        await NormalizeRouteOverflowAsync(context);
+
+        var routeDate = startDate.Date;
 
         while (true)
         {
             var route = await FindOrCreateRouteAsync(context, routeDate);
             var stopCount = await context.RouteStops.CountAsync(item => item.RouteId == route.Id);
 
-            if (stopCount < 5)
+            if (stopCount < MaxStopsPerRoute)
             {
-                return route;
+                return routeDate;
             }
 
             routeDate = routeDate.AddDays(1);
         }
     }
 
-    public static async Task RebalanceRoutesAsync(AppDbContext context)
+    public static Task<WasteGlassRoute> FindAvailableRouteAsync(AppDbContext context)
+    {
+        return GetAvailableRouteAsync(context);
+    }
+
+    public static async Task NormalizeRouteOverflowAsync(AppDbContext context)
     {
         var today = DateTime.Today;
-        var routes = await context.Routes
-            .Include(route => route.RouteStops)
-            .Where(route => route.RouteDate.Date >= today)
-            .OrderBy(route => route.RouteDate)
+
+        var stops = await context.RouteStops
+            .Include(stop => stop.Route)
+            .Where(stop => stop.Route.RouteDate >= today)
+            .OrderBy(stop => stop.Route.RouteDate)
+            .ThenBy(stop => stop.StopSequence)
+            .ThenBy(stop => stop.Id)
             .ToListAsync();
 
-        if (routes.Count == 0)
+        if (stops.Count == 0)
         {
             return;
         }
 
-        var stops = routes
-            .SelectMany(route => route.RouteStops
-                .OrderBy(stop => stop.StopSequence)
-                .ThenBy(stop => stop.Id)
-                .Select(stop => new { RouteDate = route.RouteDate.Date, Stop = stop }))
-            .OrderBy(item => item.RouteDate)
-            .ThenBy(item => item.Stop.StopSequence)
-            .ThenBy(item => item.Stop.Id)
-            .Select(item => item.Stop)
-            .ToList();
-
         for (var index = 0; index < stops.Count; index++)
         {
-            var targetDate = today.AddDays(index / 5);
+            var targetDate = today.AddDays(index / MaxStopsPerRoute);
             var targetRoute = await FindOrCreateRouteAsync(context, targetDate);
 
             stops[index].RouteId = targetRoute.Id;
-            stops[index].StopSequence = (index % 5) + 1;
+            stops[index].StopSequence = (index % MaxStopsPerRoute) + 1;
         }
 
         await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+    }
+
+    public static Task NormalizeRouteStopsAsync(AppDbContext context)
+    {
+        return NormalizeRouteOverflowAsync(context);
+    }
+
+    public static Task RebalanceRoutesAsync(AppDbContext context)
+    {
+        return NormalizeRouteOverflowAsync(context);
     }
 
     private static async Task<WasteGlassRoute> FindOrCreateRouteAsync(

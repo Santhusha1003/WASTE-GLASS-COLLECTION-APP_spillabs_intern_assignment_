@@ -8,5 +8,6 @@ public class RouteStop
     public string SupplierId { get; set; } = string.Empty;
     public Supplier Supplier { get; set; } = null!;
     public int StopSequence { get; set; }
+    public double DistanceKm { get; set; }
     public string Status { get; set; } = string.Empty;
 }

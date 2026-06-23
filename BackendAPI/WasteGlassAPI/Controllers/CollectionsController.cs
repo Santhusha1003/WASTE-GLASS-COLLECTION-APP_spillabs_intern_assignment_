@@ -59,6 +59,18 @@ public class CollectionsController : ControllerBase
             supplier.Status = "Collected";
         }
 
+        var today = DateTime.Today;
+        var routeStop = await _context.RouteStops
+            .Include(item => item.Route)
+            .FirstOrDefaultAsync(item =>
+                item.SupplierId == record.SupplierId &&
+                item.Route.RouteDate.Date == today);
+
+        if (routeStop is not null)
+        {
+            routeStop.Status = "Collected";
+        }
+
         await _context.SaveChangesAsync();
 
         return CreatedAtAction(nameof(GetCollections), new { id = record.Id }, record);

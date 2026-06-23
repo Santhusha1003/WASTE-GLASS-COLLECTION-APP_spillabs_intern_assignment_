@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using WasteGlassAPI.Data;
 using WasteGlassAPI.Models;
 using WasteGlassAPI.Services;
+using WasteGlassRoute = WasteGlassAPI.Models.Route;
 
 namespace WasteGlassAPI.Controllers;
 
@@ -50,6 +51,21 @@ public class AdminController : ControllerBase
             ? normalizedSupplierId
             : request.BarcodeValue.Trim().ToUpperInvariant();
         supplier.Status = request.Status.Trim();
+
+        if (request.DistanceKm.HasValue)
+        {
+            var today = DateTime.Today;
+            var routeStop = await _context.RouteStops
+                .Include(item => item.Route)
+                .FirstOrDefaultAsync(item =>
+                    item.SupplierId == normalizedSupplierId &&
+                    item.Route.RouteDate.Date == today);
+
+            if (routeStop is not null)
+            {
+                routeStop.DistanceKm = request.DistanceKm.Value;
+            }
+        }
 
         await _context.SaveChangesAsync();
 
@@ -128,8 +144,8 @@ public class AdminController : ControllerBase
                 SupplierId = supplierId,
                 Name = request.SupplierName.Trim(),
                 Location = request.Location.Trim(),
-                Latitude = request.Latitude,
-                Longitude = request.Longitude,
+                Latitude = 0,
+                Longitude = 0,
                 ExpectedKg = request.ExpectedKg,
                 BarcodeValue = string.IsNullOrWhiteSpace(request.BarcodeValue)
                     ? supplierId
@@ -141,9 +157,9 @@ public class AdminController : ControllerBase
             await _context.SaveChangesAsync();
         }
 
-        await RouteScheduler.RebalanceRoutesAsync(_context);
+        await RouteScheduler.NormalizeRouteOverflowAsync(_context);
 
-        var route = await RouteScheduler.FindAvailableRouteAsync(_context);
+        var route = await RouteScheduler.GetAvailableRouteAsync(_context);
         var stopCount = await _context.RouteStops
             .CountAsync(item => item.RouteId == route.Id);
         var stopSequence = stopCount + 1;
@@ -159,6 +175,7 @@ public class AdminController : ControllerBase
                 RouteId = route.Id,
                 SupplierId = supplierId,
                 StopSequence = stopSequence,
+                DistanceKm = request.DistanceKm,
                 Status = "Pending"
             };
 
@@ -167,9 +184,11 @@ public class AdminController : ControllerBase
         else
         {
             routeStop.StopSequence = stopSequence;
+            routeStop.DistanceKm = request.DistanceKm;
         }
 
         await _context.SaveChangesAsync();
+        await RouteScheduler.NormalizeRouteOverflowAsync(_context);
 
         return Ok(new
         {
@@ -182,6 +201,138 @@ public class AdminController : ControllerBase
         });
     }
 
+    [HttpPost("reset-demo-data")]
+    public async Task<IActionResult> ResetDemoData()
+    {
+        _context.CollectionRecords.RemoveRange(await _context.CollectionRecords.ToListAsync());
+        _context.RouteStops.RemoveRange(await _context.RouteStops.ToListAsync());
+        _context.Routes.RemoveRange(await _context.Routes.ToListAsync());
+
+        var suppliers = await _context.Suppliers.ToListAsync();
+        foreach (var supplier in suppliers)
+        {
+            supplier.Status = "Pending";
+        }
+
+        await EnsureDemoSuppliersAsync();
+        await _context.SaveChangesAsync();
+
+        var todayRoute = new WasteGlassRoute
+        {
+            RouteDate = DateTime.Today,
+            DriverName = "Collector 01",
+            Status = "Active"
+        };
+
+        _context.Routes.Add(todayRoute);
+        await _context.SaveChangesAsync();
+
+        var demoStopSupplierIds = new[] { "SUP001", "SUP002", "SUP003", "SUP004", "SUP005" };
+
+        for (var index = 0; index < demoStopSupplierIds.Length; index++)
+        {
+            _context.RouteStops.Add(new RouteStop
+            {
+                RouteId = todayRoute.Id,
+                SupplierId = demoStopSupplierIds[index],
+                StopSequence = index + 1,
+                DistanceKm = index + 1,
+                Status = "Pending"
+            });
+        }
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            message = "Demo data reset successfully",
+            routeId = todayRoute.Id,
+            routeDate = todayRoute.RouteDate.ToString("yyyy-MM-dd"),
+            stopCount = demoStopSupplierIds.Length
+        });
+    }
+
+    private async Task EnsureDemoSuppliersAsync()
+    {
+        var demoSuppliers = new List<Supplier>
+        {
+            new Supplier
+            {
+                SupplierId = "SUP001",
+                Name = "ABC Glass Supplier",
+                Location = "Kandy Road",
+                Latitude = 7.2906,
+                Longitude = 80.6337,
+                ExpectedKg = 30,
+                BarcodeValue = "SUP001",
+                Status = "Pending"
+            },
+            new Supplier
+            {
+                SupplierId = "SUP002",
+                Name = "XYZ Glass Center",
+                Location = "Matale Road",
+                Latitude = 7.4675,
+                Longitude = 80.6234,
+                ExpectedKg = 25,
+                BarcodeValue = "SUP002",
+                Status = "Pending"
+            },
+            new Supplier
+            {
+                SupplierId = "SUP003",
+                Name = "Green Glass Hub",
+                Location = "Dambulla",
+                Latitude = 7.8731,
+                Longitude = 80.6511,
+                ExpectedKg = 20,
+                BarcodeValue = "SUP003",
+                Status = "Pending"
+            },
+            new Supplier
+            {
+                SupplierId = "SUP004",
+                Name = "City Bottle Depot",
+                Location = "Peradeniya Road",
+                Latitude = 7.2667,
+                Longitude = 80.5967,
+                ExpectedKg = 22,
+                BarcodeValue = "SUP004",
+                Status = "Pending"
+            },
+            new Supplier
+            {
+                SupplierId = "SUP005",
+                Name = "Central Glass Recyclers",
+                Location = "Katugastota",
+                Latitude = 7.3333,
+                Longitude = 80.6167,
+                ExpectedKg = 18,
+                BarcodeValue = "SUP005",
+                Status = "Pending"
+            }
+        };
+
+        foreach (var demoSupplier in demoSuppliers)
+        {
+            var existingSupplier = await _context.Suppliers
+                .FirstOrDefaultAsync(item => item.SupplierId == demoSupplier.SupplierId);
+
+            if (existingSupplier is null)
+            {
+                _context.Suppliers.Add(demoSupplier);
+                continue;
+            }
+
+            existingSupplier.Name = demoSupplier.Name;
+            existingSupplier.Location = demoSupplier.Location;
+            existingSupplier.Latitude = demoSupplier.Latitude;
+            existingSupplier.Longitude = demoSupplier.Longitude;
+            existingSupplier.ExpectedKg = demoSupplier.ExpectedKg;
+            existingSupplier.BarcodeValue = demoSupplier.BarcodeValue;
+            existingSupplier.Status = "Pending";
+        }
+    }
 }
 
 public class AddSupplierToRouteRequest
@@ -189,9 +340,8 @@ public class AddSupplierToRouteRequest
     public string SupplierId { get; set; } = string.Empty;
     public string SupplierName { get; set; } = string.Empty;
     public string Location { get; set; } = string.Empty;
-    public double Latitude { get; set; }
-    public double Longitude { get; set; }
     public double ExpectedKg { get; set; }
+    public double DistanceKm { get; set; }
     public string BarcodeValue { get; set; } = string.Empty;
 }
 
@@ -202,6 +352,7 @@ public class UpdateSupplierRequest
     public double Latitude { get; set; }
     public double Longitude { get; set; }
     public double ExpectedKg { get; set; }
+    public double? DistanceKm { get; set; }
     public string BarcodeValue { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
 }

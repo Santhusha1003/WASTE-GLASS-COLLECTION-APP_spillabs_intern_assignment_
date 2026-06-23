@@ -19,21 +19,32 @@ public class ReportController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<ReportDto>> GetReport()
     {
-        var suppliers = await _context.Suppliers
-            .OrderBy(supplier => supplier.SupplierId)
-            .ToListAsync();
+        var today = DateTime.Today;
+        var route = await _context.Routes
+            .Include(item => item.RouteStops)
+                .ThenInclude(routeStop => routeStop.Supplier)
+            .FirstOrDefaultAsync(item => item.RouteDate.Date == today);
+
+        if (route is null)
+        {
+            return Ok(new ReportDto());
+        }
 
         var records = await _context.CollectionRecords.ToListAsync();
 
-        var supplierSummaries = suppliers.Select(supplier =>
+        var supplierSummaries = route.RouteStops
+            .OrderBy(routeStop => routeStop.StopSequence)
+            .Where(routeStop => routeStop.Supplier is not null)
+            .Select(routeStop =>
         {
+            var supplier = routeStop.Supplier;
             var collectedKg = records
-                .Where(record => record.SupplierId == supplier.SupplierId)
+                .Where(record => record.SupplierId == routeStop.SupplierId)
                 .Sum(record => record.ClearKg + record.ColoredKg);
 
             return new SupplierSummaryDto
             {
-                SupplierId = supplier.SupplierId,
+                SupplierId = routeStop.SupplierId,
                 Name = supplier.Name,
                 ExpectedKg = supplier.ExpectedKg,
                 CollectedKg = collectedKg,

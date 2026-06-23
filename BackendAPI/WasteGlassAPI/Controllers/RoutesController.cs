@@ -20,7 +20,7 @@ public class RoutesController : ControllerBase
     [HttpGet("today")]
     public async Task<IActionResult> GetTodayRoute()
     {
-        await RouteScheduler.RebalanceRoutesAsync(_context);
+        await RouteScheduler.NormalizeRouteOverflowAsync(_context);
 
         var today = DateTime.Today;
         var route = await _context.Routes
@@ -44,7 +44,7 @@ public class RoutesController : ControllerBase
             return BadRequest("Invalid date. Use YYYY-MM-DD.");
         }
 
-        await RouteScheduler.RebalanceRoutesAsync(_context);
+        await RouteScheduler.NormalizeRouteOverflowAsync(_context);
 
         var route = await _context.Routes
             .Include(item => item.RouteStops)
@@ -69,6 +69,7 @@ public class RoutesController : ControllerBase
             status = route.Status,
             stops = route.RouteStops
                 .OrderBy(stop => stop.StopSequence)
+                .Take(5)
                 .Select(stop => new
                 {
                     stopSequence = stop.StopSequence,
@@ -78,8 +79,13 @@ public class RoutesController : ControllerBase
                     latitude = stop.Supplier.Latitude,
                     longitude = stop.Supplier.Longitude,
                     expectedKg = stop.Supplier.ExpectedKg,
+                    distanceKm = stop.DistanceKm,
                     barcodeValue = stop.Supplier.BarcodeValue,
-                    status = stop.Status
+                    status =
+                        stop.Status == "Collected" ||
+                        stop.Supplier.Status == "Collected"
+                            ? "Collected"
+                            : "Pending"
                 })
         };
     }

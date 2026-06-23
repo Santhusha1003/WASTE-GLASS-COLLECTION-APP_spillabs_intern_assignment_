@@ -16,8 +16,6 @@ class ReportScreen extends StatefulWidget {
 }
 
 class _ReportScreenState extends State<ReportScreen> {
-  static const double _expectedKg = 30;
-
   late Future<List<CollectionModel>> _collectionsFuture;
 
   Map<String, dynamic>? backendReport;
@@ -37,9 +35,9 @@ class _ReportScreenState extends State<ReportScreen> {
 
     final report = await ApiService().getReport();
 
-    print("========== REPORT API ==========");
-    print(report);
-    print("================================");
+    debugPrint('========== REPORT API ==========');
+    debugPrint(report.toString());
+    debugPrint('================================');
 
     if (!mounted) return;
 
@@ -82,6 +80,7 @@ class _ReportScreenState extends State<ReportScreen> {
             final backendTotalExpected = backendReport?['totalExpected'];
             final supplierSummaries =
                 backendReport?['supplierSummaries'] as List<dynamic>?;
+            final shortfalls = backendReport?['shortfalls'] as List<dynamic>?;
 
             final displayTotalCollected = backendTotalCollected != null
                 ? (backendTotalCollected as num).toDouble()
@@ -89,10 +88,22 @@ class _ReportScreenState extends State<ReportScreen> {
 
             final displayExpectedKg = backendTotalExpected != null
                 ? (backendTotalExpected as num).toDouble()
-                : _expectedKg;
+                : 0.0;
 
             final hasShortfall = displayTotalCollected < displayExpectedKg;
             final shortfallKg = displayExpectedKg - displayTotalCollected;
+            final remainingStops = _remainingStopCount(supplierSummaries);
+            final completedStops = _completedStopCount(supplierSummaries);
+            final isTripCompleted =
+                supplierSummaries != null &&
+                supplierSummaries.isNotEmpty &&
+                remainingStops == 0;
+            final tripTimeLabel = isTripCompleted
+                ? 'Actual Trip Time'
+                : 'Estimated Remaining Time';
+            final tripTime = _formatTripTime(
+              (isTripCompleted ? completedStops : remainingStops) * 30,
+            );
 
             return SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
@@ -109,19 +120,19 @@ class _ReportScreenState extends State<ReportScreen> {
                         icon: Icons.recycling,
                       ),
                       const SizedBox(width: 12),
-                      const SummaryCard(
-                        title: 'Total Distance',
-                        value: '15.8 km',
+                      SummaryCard(
+                        title: 'Total Expected',
+                        value: '${_formatKg(displayExpectedKg)} kg',
                         icon: Icons.route,
                       ),
                     ],
                   ),
                   const SizedBox(height: 12),
-                  const Row(
+                  Row(
                     children: [
                       SummaryCard(
-                        title: 'Trip Duration',
-                        value: '2h 35m',
+                        title: tripTimeLabel,
+                        value: tripTime,
                         icon: Icons.timer_outlined,
                       ),
                     ],
@@ -130,6 +141,36 @@ class _ReportScreenState extends State<ReportScreen> {
                     const SizedBox(height: 16),
                     _ShortfallWarning(shortfallKg: shortfallKg),
                   ],
+                  const SizedBox(height: 22),
+                  Text(
+                    'Shortfalls',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (shortfalls == null || shortfalls.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 4),
+                      child: Text(
+                        'No shortfalls found.',
+                        style: TextStyle(
+                          color: AppColors.mutedText,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    )
+                  else
+                    ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: shortfalls.length,
+                      itemBuilder: (context, index) {
+                        return _BackendShortfallCard(
+                          shortfall: shortfalls[index],
+                        );
+                      },
+                    ),
                   const SizedBox(height: 22),
                   Text(
                     'Supplier Summary',
@@ -214,6 +255,47 @@ class _ReportScreenState extends State<ReportScreen> {
     }
 
     return value.toStringAsFixed(1);
+  }
+
+  int _remainingStopCount(List<dynamic>? supplierSummaries) {
+    if (supplierSummaries == null) {
+      return 0;
+    }
+
+    return supplierSummaries.where((summary) {
+      if (summary is! Map) {
+        return false;
+      }
+
+      final status = summary['status']?.toString().trim().toLowerCase() ?? '';
+      return status != 'collected';
+    }).length;
+  }
+
+  int _completedStopCount(List<dynamic>? supplierSummaries) {
+    if (supplierSummaries == null) {
+      return 0;
+    }
+
+    return supplierSummaries.where((summary) {
+      if (summary is! Map) {
+        return false;
+      }
+
+      final status = summary['status']?.toString().trim().toLowerCase() ?? '';
+      return status == 'collected';
+    }).length;
+  }
+
+  String _formatTripTime(int minutes) {
+    final hours = minutes ~/ 60;
+    final remainingMinutes = minutes % 60;
+
+    if (hours == 0) {
+      return '${remainingMinutes}m';
+    }
+
+    return '${hours}h ${remainingMinutes.toString().padLeft(2, '0')}m';
   }
 }
 
@@ -389,6 +471,74 @@ class _BackendSupplierSummaryCard extends StatelessWidget {
   double _readNumber(String key) {
     if (summary is Map) {
       final map = summary as Map;
+      final value = map[key];
+      if (value is num) {
+        return value.toDouble();
+      }
+    }
+
+    return 0;
+  }
+
+  String _formatKg(double value) {
+    if (value == value.roundToDouble()) {
+      return value.toInt().toString();
+    }
+
+    return value.toStringAsFixed(1);
+  }
+}
+
+class _BackendShortfallCard extends StatelessWidget {
+  const _BackendShortfallCard({required this.shortfall});
+
+  final dynamic shortfall;
+
+  @override
+  Widget build(BuildContext context) {
+    final supplierId = _readValue('supplierId');
+    final name = _readValue('name');
+    final shortfallKg = _readNumber('shortfallKg');
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.warningRed.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.warningRed.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.warning_amber_rounded, color: AppColors.warningRed),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '$supplierId - $name: ${_formatKg(shortfallKg)} kg short',
+              style: const TextStyle(
+                color: AppColors.warningRed,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _readValue(String key) {
+    if (shortfall is Map) {
+      final map = shortfall as Map;
+      final value = map[key];
+      return value?.toString() ?? '-';
+    }
+
+    return '-';
+  }
+
+  double _readNumber(String key) {
+    if (shortfall is Map) {
+      final map = shortfall as Map;
       final value = map[key];
       if (value is num) {
         return value.toDouble();

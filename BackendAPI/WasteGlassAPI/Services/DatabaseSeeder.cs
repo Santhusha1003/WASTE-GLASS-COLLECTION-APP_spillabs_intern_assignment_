@@ -11,7 +11,7 @@ public static class DatabaseSeeder
     {
         await SeedSuppliersAsync(context);
         await SeedTodayRouteAsync(context);
-        await RouteScheduler.RebalanceRoutesAsync(context);
+        await RouteScheduler.NormalizeRouteOverflowAsync(context);
     }
 
     private static async Task SeedSuppliersAsync(AppDbContext context)
@@ -111,11 +111,11 @@ public static class DatabaseSeeder
 
         var routeStops = new[]
         {
-            new { SupplierId = "SUP001", Sequence = 1 },
-            new { SupplierId = "SUP002", Sequence = 2 },
-            new { SupplierId = "SUP003", Sequence = 3 },
-            new { SupplierId = "SUP004", Sequence = 4 },
-            new { SupplierId = "SUP005", Sequence = 5 }
+            new { SupplierId = "SUP001", Sequence = 1, DistanceKm = 3.2 },
+            new { SupplierId = "SUP002", Sequence = 2, DistanceKm = 4.6 },
+            new { SupplierId = "SUP003", Sequence = 3, DistanceKm = 6.8 },
+            new { SupplierId = "SUP004", Sequence = 4, DistanceKm = 2.9 },
+            new { SupplierId = "SUP005", Sequence = 5, DistanceKm = 5.1 }
         };
 
         foreach (var stop in routeStops)
@@ -131,6 +131,7 @@ public static class DatabaseSeeder
                     RouteId = route.Id,
                     SupplierId = stop.SupplierId,
                     StopSequence = stop.Sequence,
+                    DistanceKm = stop.DistanceKm,
                     Status = "Pending"
                 });
             }
