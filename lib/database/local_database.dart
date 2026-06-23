@@ -20,21 +20,24 @@ class LocalDatabase {
     _database = await openDatabase(
       path,
       version: 1,
-      onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE collections(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            supplierId TEXT NOT NULL,
-            clearKg REAL NOT NULL,
-            coloredKg REAL NOT NULL,
-            condition TEXT NOT NULL,
-            timestamp TEXT NOT NULL
-          )
-        ''');
-      },
+      onCreate: (db, version) => _createCollectionsTable(db),
+      onOpen: (db) => _createCollectionsTable(db),
     );
 
     return _database!;
+  }
+
+  Future<void> _createCollectionsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS collections(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        supplierId TEXT NOT NULL,
+        clearKg REAL NOT NULL,
+        coloredKg REAL NOT NULL,
+        condition TEXT NOT NULL,
+        timestamp TEXT NOT NULL
+      )
+    ''');
   }
 
   Future<int> insertCollection({

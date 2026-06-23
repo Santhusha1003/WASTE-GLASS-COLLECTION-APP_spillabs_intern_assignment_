@@ -1,0 +1,39 @@
+{
+  "Version": 1,
+  "Hash": "2kPUhF2HRkafnLQR///EiJYFg0hmHquB5Fj7Gxnh8Co=",
+  "Source": "WasteGlassAPI",
+  "BasePath": "_content/WasteGlassAPI",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [
+    {
+      "Name": "WasteGlassAPI/wwwroot",
+      "Source": "WasteGlassAPI",
+      "ContentRoot": "/Users/santhushadharmakeerthi/Desktop/Intern Test/BackendAPI/WasteGlassAPI/wwwroot/",
+      "BasePath": "_content/WasteGlassAPI",
+      "Pattern": "**"
+    }
+  ],
+  "Assets": [
+    {
+      "Identity": "/Users/santhushadharmakeerthi/Desktop/Intern Test/BackendAPI/WasteGlassAPI/wwwroot/admin/index.html",
+      "SourceId": "WasteGlassAPI",
+      "SourceType": "Discovered",
+      "ContentRoot": "/Users/santhushadharmakeerthi/Desktop/Intern Test/BackendAPI/WasteGlassAPI/wwwroot/",
+      "BasePath": "_content/WasteGlassAPI",
+      "RelativePath": "admin/index.html",
+      "AssetKind": "All",
+      "AssetMode": "All",
+      "AssetRole": "Primary",
+      "AssetMergeBehavior": "PreferTarget",
+      "AssetMergeSource": "",
+      "RelatedAsset": "",
+      "AssetTraitName": "",
+      "AssetTraitValue": "",
+      "CopyToOutputDirectory": "Never",
+      "CopyToPublishDirectory": "PreserveNewest",
+      "OriginalItemSpec": "wwwroot/admin/index.html"
+    }
+  ]
+}

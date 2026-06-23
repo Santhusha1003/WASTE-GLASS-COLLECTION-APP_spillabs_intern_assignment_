@@ -1,0 +1,25 @@
+{
+  "Files": [
+    {
+      "Id": "/Users/santhushadharmakeerthi/Desktop/Intern Test/BackendAPI/WasteGlassAPI/wwwroot/admin/index.html",
+      "PackagePath": "staticwebassets/admin/index.html"
+    },
+    {
+      "Id": "obj/Debug/net8.0/staticwebassets/msbuild.WasteGlassAPI.Microsoft.AspNetCore.StaticWebAssets.props",
+      "PackagePath": "build\\Microsoft.AspNetCore.StaticWebAssets.props"
+    },
+    {
+      "Id": "obj/Debug/net8.0/staticwebassets/msbuild.build.WasteGlassAPI.props",
+      "PackagePath": "build\\WasteGlassAPI.props"
+    },
+    {
+      "Id": "obj/Debug/net8.0/staticwebassets/msbuild.buildMultiTargeting.WasteGlassAPI.props",
+      "PackagePath": "buildMultiTargeting\\WasteGlassAPI.props"
+    },
+    {
+      "Id": "obj/Debug/net8.0/staticwebassets/msbuild.buildTransitive.WasteGlassAPI.props",
+      "PackagePath": "buildTransitive\\WasteGlassAPI.props"
+    }
+  ],
+  "ElementsToRemove": []
+}

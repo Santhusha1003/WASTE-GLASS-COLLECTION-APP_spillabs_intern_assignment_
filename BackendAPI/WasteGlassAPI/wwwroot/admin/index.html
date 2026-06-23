@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Waste Glass Admin</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Arial, Helvetica, sans-serif;
+      color: #1c2520;
+      background: #f3f5f4;
+    }
+
+    body {
+      margin: 0;
+      padding: 32px 16px;
+    }
+
+    main {
+      max-width: 1080px;
+      margin: 0 auto;
+    }
+
+    section {
+      background: #ffffff;
+      border: 1px solid #e4e9e6;
+      border-radius: 18px;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.06);
+      margin-bottom: 18px;
+      padding: 24px;
+    }
+
+    h1, h2 {
+      margin: 0 0 6px;
+    }
+
+    p {
+      margin: 0 0 20px;
+      color: #6b756f;
+    }
+
+    form {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      font-weight: 700;
+    }
+
+    input {
+      min-height: 44px;
+      border: 1px solid #e4e9e6;
+      border-radius: 12px;
+      padding: 0 12px;
+      font-size: 16px;
+    }
+
+    .full {
+      grid-column: 1 / -1;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    button {
+      min-height: 42px;
+      border: 0;
+      border-radius: 12px;
+      background: #16833a;
+      color: #ffffff;
+      font-size: 14px;
+      font-weight: 800;
+      cursor: pointer;
+      padding: 0 14px;
+    }
+
+    button.secondary {
+      background: #1c2520;
+    }
+
+    button.danger {
+      background: #d32f2f;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+    }
+
+    th, td {
+      border-bottom: 1px solid #e4e9e6;
+      padding: 12px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: #6b756f;
+      font-size: 13px;
+      text-transform: uppercase;
+    }
+
+    td.actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    #message {
+      margin-top: 16px;
+      font-weight: 800;
+      color: #16833a;
+    }
+
+    #message.error {
+      color: #d32f2f;
+    }
+
+    @media (max-width: 640px) {
+      form {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section>
+      <h1>Waste Glass Admin</h1>
+      <p>Manage suppliers and today's collection route.</p>
+    </section>
+
+    <section>
+      <h2>Add Supplier To Today Route</h2>
+      <p>Add a new or existing supplier to today's active route.</p>
+
+      <form id="supplierForm">
+        <label>
+          Supplier ID
+          <input name="supplierId" required>
+        </label>
+
+        <label>
+          Supplier Name
+          <input name="supplierName" required>
+        </label>
+
+        <label class="full">
+          Location
+          <input name="location" required>
+        </label>
+
+        <label>
+          Latitude
+          <input name="latitude" type="number" step="any" required>
+        </label>
+
+        <label>
+          Longitude
+          <input name="longitude" type="number" step="any" required>
+        </label>
+
+        <label>
+          Expected KG
+          <input name="expectedKg" type="number" step="any" required>
+        </label>
+
+        <label>
+          Barcode Value
+          <input name="barcodeValue" required>
+        </label>
+
+        <button class="full" type="submit">Add Supplier To Today Route</button>
+      </form>
+
+      <div id="message" role="status"></div>
+    </section>
+
+    <section>
+      <h2>View Today Route</h2>
+      <p>Route stops ordered by stop sequence.</p>
+      <div class="toolbar">
+        <button type="button" onclick="loadTodayRoute()">Load Today Route</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Sequence</th>
+              <th>Supplier ID</th>
+              <th>Name</th>
+              <th>Location</th>
+              <th>Expected KG</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="routeTableBody">
+            <tr><td colspan="7">No route loaded.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>View All Suppliers</h2>
+      <p>All supplier records available to the route planner.</p>
+      <div class="toolbar">
+        <button type="button" onclick="loadSuppliers()">Load All Suppliers</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Supplier ID</th>
+              <th>Name</th>
+              <th>Location</th>
+              <th>Expected KG</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="suppliersTableBody">
+            <tr><td colspan="6">No suppliers loaded.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const form = document.getElementById('supplierForm');
+    const message = document.getElementById('message');
+    const routeTableBody = document.getElementById('routeTableBody');
+    const suppliersTableBody = document.getElementById('suppliersTableBody');
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      setMessage('');
+
+      const formData = new FormData(form);
+      const body = {
+        supplierId: formData.get('supplierId'),
+        supplierName: formData.get('supplierName'),
+        location: formData.get('location'),
+        latitude: Number(formData.get('latitude')),
+        longitude: Number(formData.get('longitude')),
+        expectedKg: Number(formData.get('expectedKg')),
+        barcodeValue: formData.get('barcodeValue')
+      };
+
+      try {
+        const result = await request('/api/admin/add-supplier-to-route', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+
+        setMessage(`Supplier added to route date: ${result.routeDate}`);
+        form.reset();
+        await refreshTables();
+      } catch (error) {
+        setMessage(error.message, true);
+      }
+    });
+
+    async function loadTodayRoute() {
+      try {
+        const route = await request('/api/Routes/today');
+        const stops = Array.isArray(route.stops) ? route.stops : [];
+
+        routeTableBody.innerHTML = stops.length === 0
+          ? '<tr><td colspan="7">No route stops found.</td></tr>'
+          : stops.map(stop => `
+              <tr>
+                <td>${escapeHtml(stop.stopSequence)}</td>
+                <td>${escapeHtml(stop.supplierId)}</td>
+                <td>${escapeHtml(stop.name)}</td>
+                <td>${escapeHtml(stop.location)}</td>
+                <td>${escapeHtml(stop.expectedKg)}</td>
+                <td>${escapeHtml(stop.status)}</td>
+                <td class="actions">
+                  <button class="secondary" type="button" onclick="editSupplier('${escapeJs(stop.supplierId)}')">Edit</button>
+                  <button class="danger" type="button" onclick="removeFromTodayRoute('${escapeJs(stop.supplierId)}')">Delete</button>
+                </td>
+              </tr>
+            `).join('');
+      } catch (error) {
+        routeTableBody.innerHTML = `<tr><td colspan="7">${escapeHtml(error.message)}</td></tr>`;
+      }
+    }
+
+    async function loadSuppliers() {
+      try {
+        const suppliers = await request('/api/admin/suppliers');
+
+        suppliersTableBody.innerHTML = suppliers.length === 0
+          ? '<tr><td colspan="6">No suppliers found.</td></tr>'
+          : suppliers.map(supplier => `
+              <tr>
+                <td>${escapeHtml(supplier.supplierId)}</td>
+                <td>${escapeHtml(supplier.name)}</td>
+                <td>${escapeHtml(supplier.location)}</td>
+                <td>${escapeHtml(supplier.expectedKg)}</td>
+                <td>${escapeHtml(supplier.status)}</td>
+                <td class="actions">
+                  <button class="secondary" type="button" onclick="editSupplier('${escapeJs(supplier.supplierId)}')">Edit</button>
+                  <button class="danger" type="button" onclick="deleteSupplier('${escapeJs(supplier.supplierId)}')">Delete</button>
+                </td>
+              </tr>
+            `).join('');
+      } catch (error) {
+        suppliersTableBody.innerHTML = `<tr><td colspan="6">${escapeHtml(error.message)}</td></tr>`;
+      }
+    }
+
+    async function editSupplier(supplierId) {
+      const suppliers = await request('/api/admin/suppliers');
+      const supplier = suppliers.find(item => item.supplierId === supplierId);
+
+      if (!supplier) {
+        setMessage('Supplier not found', true);
+        return;
+      }
+
+      const name = prompt('Supplier name', supplier.name);
+      if (name === null) return;
+      const location = prompt('Location', supplier.location);
+      if (location === null) return;
+      const latitude = prompt('Latitude', supplier.latitude);
+      if (latitude === null) return;
+      const longitude = prompt('Longitude', supplier.longitude);
+      if (longitude === null) return;
+      const expectedKg = prompt('Expected KG', supplier.expectedKg);
+      if (expectedKg === null) return;
+      const barcodeValue = prompt('Barcode Value', supplier.barcodeValue);
+      if (barcodeValue === null) return;
+      const status = prompt('Status', supplier.status);
+      if (status === null) return;
+
+      await request(`/api/admin/suppliers/${encodeURIComponent(supplierId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          location,
+          latitude: Number(latitude),
+          longitude: Number(longitude),
+          expectedKg: Number(expectedKg),
+          barcodeValue,
+          status
+        })
+      });
+
+      setMessage('Supplier updated successfully');
+      await refreshTables();
+    }
+
+    async function deleteSupplier(supplierId) {
+      if (!confirm(`Delete supplier ${supplierId}?`)) return;
+
+      await request(`/api/admin/suppliers/${encodeURIComponent(supplierId)}`, {
+        method: 'DELETE'
+      });
+
+      setMessage('Supplier deleted successfully');
+      await refreshTables();
+    }
+
+    async function removeFromTodayRoute(supplierId) {
+      if (!confirm(`Remove ${supplierId} from today's route?`)) return;
+
+      await request(`/api/admin/routes/today/stops/${encodeURIComponent(supplierId)}`, {
+        method: 'DELETE'
+      });
+
+      setMessage('Supplier removed from today route');
+      await refreshTables();
+    }
+
+    async function refreshTables() {
+      await Promise.all([loadTodayRoute(), loadSuppliers()]);
+    }
+
+    async function request(url, options) {
+      const response = await fetch(url, options);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || 'Request failed');
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        return response.json();
+      }
+
+      return response.text();
+    }
+
+    function setMessage(text, isError = false) {
+      message.textContent = text;
+      message.classList.toggle('error', isError);
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    function escapeJs(value) {
+      return String(value ?? '').replaceAll('\\', '\\\\').replaceAll("'", "\\'");
+    }
+  </script>
+</body>
+</html>

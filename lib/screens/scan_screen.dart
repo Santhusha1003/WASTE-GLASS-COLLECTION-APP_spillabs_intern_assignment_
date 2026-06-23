@@ -13,43 +13,44 @@ class ScanScreen extends StatefulWidget {
 }
 
 class _ScanScreenState extends State<ScanScreen> {
-  static const List<_ScanSupplier> _suppliers = [
-    _ScanSupplier(
-      id: 'SUP001',
-      name: 'ABC Glass Supplier',
-      location: 'Kandy Road',
-      distance: '2.4 km away',
-    ),
-    _ScanSupplier(
-      id: 'SUP002',
-      name: 'XYZ Glass Center',
-      location: 'Matale Road',
-      distance: '3.7 km away',
-    ),
-    _ScanSupplier(
-      id: 'SUP003',
-      name: 'Green Glass Hub',
-      location: 'Dambulla',
-      distance: '4.1 km away',
-    ),
-  ];
-
   final _formKey = GlobalKey<FormState>();
   final _clearGlassController = TextEditingController();
   final _coloredGlassController = TextEditingController();
   bool isSupplierVerified = false;
+  bool _isDevModeVerified = false;
   bool _isSaving = false;
-  int _currentSupplierIndex = 0;
+  bool _didReadRouteArguments = false;
   int _offlineSavedCount = 0;
   String scannedSupplierId = '';
   String _condition = 'Good';
+  _ScanSupplier _selectedSupplier = const _ScanSupplier(
+    supplierId: '',
+    name: 'Selected Supplier',
+    location: '',
+    distance: '',
+    barcodeValue: '',
+  );
 
-  _ScanSupplier get _currentSupplier => _suppliers[_currentSupplierIndex];
+  _ScanSupplier get _currentSupplier => _selectedSupplier;
 
   @override
   void initState() {
     super.initState();
     _loadOfflineSavedCount();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    if (_didReadRouteArguments) {
+      return;
+    }
+
+    _didReadRouteArguments = true;
+    _selectedSupplier = _ScanSupplier.fromRouteArguments(
+      ModalRoute.of(context)?.settings.arguments,
+    );
   }
 
   @override
@@ -92,10 +93,14 @@ class _ScanScreenState extends State<ScanScreen> {
     final normalizedValue = scannedValue.trim().toUpperCase();
     setState(() {
       scannedSupplierId = normalizedValue;
-      isSupplierVerified = normalizedValue == _currentSupplier.id;
+      isSupplierVerified =
+          normalizedValue == _currentSupplier.expectedBarcode.toUpperCase();
+      _isDevModeVerified = false;
     });
 
-    if (!isSupplierVerified) {
+    if (isSupplierVerified) {
+      _showSnackBar('Supplier Verified');
+    } else {
       _showSnackBar('Wrong Supplier Barcode', isError: true);
     }
   }
@@ -113,7 +118,7 @@ class _ScanScreenState extends State<ScanScreen> {
 
     try {
       await LocalDatabase.instance.insertCollection(
-        supplierId: _currentSupplier.id,
+        supplierId: _currentSupplier.supplierId,
         clearKg: double.parse(_clearGlassController.text.trim()),
         coloredKg: double.parse(_coloredGlassController.text.trim()),
         condition: _condition,
@@ -127,14 +132,10 @@ class _ScanScreenState extends State<ScanScreen> {
       }
 
       _showSnackBar('Collection saved offline');
-      if (_currentSupplierIndex < _suppliers.length - 1) {
-        _moveToNextStop();
-      } else {
-        Navigator.pushNamed(context, '/report');
-      }
+      Navigator.pushNamedAndRemoveUntil(context, '/report', (route) => false);
     } catch (_) {
       if (mounted) {
-        _showSnackBar('Could not save collection offline', isError: true);
+        _showSnackBar('Failed to save collection', isError: true);
       }
     } finally {
       if (mounted) {
@@ -143,15 +144,15 @@ class _ScanScreenState extends State<ScanScreen> {
     }
   }
 
-  void _moveToNextStop() {
+  // TODO: Remove DEV MODE before final submission
+  void _skipBarcodeVerificationForDevMode() {
     setState(() {
-      _currentSupplierIndex += 1;
-      isSupplierVerified = false;
-      scannedSupplierId = '';
-      _condition = 'Good';
-      _clearGlassController.clear();
-      _coloredGlassController.clear();
+      scannedSupplierId = _currentSupplier.supplierId;
+      isSupplierVerified = true;
+      _isDevModeVerified = true;
     });
+
+    _showSnackBar('Supplier Verified (DEV MODE)');
   }
 
   void _showSnackBar(String message, {bool isError = false}) {
@@ -223,11 +224,18 @@ class _ScanScreenState extends State<ScanScreen> {
                   icon: Icons.document_scanner_outlined,
                   onPressed: _openScanner,
                 ),
+                const SizedBox(height: 10),
+                CustomButton(
+                  label: 'Skip Barcode Verification (DEV MODE)',
+                  icon: Icons.bug_report_outlined,
+                  onPressed: _skipBarcodeVerificationForDevMode,
+                ),
                 const SizedBox(height: 12),
                 _VerificationStatus(
                   isSupplierVerified: isSupplierVerified,
+                  isDevModeVerified: _isDevModeVerified,
                   scannedSupplierId: scannedSupplierId,
-                  expectedSupplierId: _currentSupplier.id,
+                  expectedSupplierId: _currentSupplier.expectedBarcode,
                 ),
                 const SizedBox(height: 12),
                 Text(
@@ -253,7 +261,8 @@ class _ScanScreenState extends State<ScanScreen> {
                     labelText: 'Clear Glass (kg)',
                     prefixIcon: Icon(Icons.scale_outlined),
                   ),
-                  validator: _requiredNumber,
+                  validator: (value) =>
+                      _requiredNumber(value, 'Clear Glass is required'),
                 ),
                 const SizedBox(height: 14),
                 TextFormField(
@@ -264,7 +273,8 @@ class _ScanScreenState extends State<ScanScreen> {
                     labelText: 'Coloured Glass (kg)',
                     prefixIcon: Icon(Icons.scale),
                   ),
-                  validator: _requiredNumber,
+                  validator: (value) =>
+                      _requiredNumber(value, 'Coloured Glass is required'),
                 ),
                 const SizedBox(height: 14),
                 DropdownButtonFormField<String>(
@@ -278,6 +288,7 @@ class _ScanScreenState extends State<ScanScreen> {
                     DropdownMenuItem(value: 'Average', child: Text('Average')),
                     DropdownMenuItem(value: 'Poor', child: Text('Poor')),
                   ],
+                  validator: _requiredCondition,
                   onChanged: isSupplierVerified
                       ? (value) {
                           if (value != null) {
@@ -287,11 +298,7 @@ class _ScanScreenState extends State<ScanScreen> {
                       : null,
                 ),
                 const SizedBox(height: 24),
-                CustomButton(
-                  label: _isSaving ? 'Saving...' : 'Confirm Collection',
-                  icon: Icons.check_circle_outline,
-                  onPressed: isSupplierVerified ? _confirmCollection : null,
-                ),
+                _buildConfirmButton(),
               ],
             ),
           ),
@@ -300,10 +307,47 @@ class _ScanScreenState extends State<ScanScreen> {
     );
   }
 
-  String? _requiredNumber(String? value) {
-    final number = double.tryParse(value ?? '');
+  Widget _buildConfirmButton() {
+    final isEnabled = isSupplierVerified && !_isSaving;
+
+    return SizedBox(
+      width: double.infinity,
+      height: 56,
+      child: FilledButton.icon(
+        onPressed: isEnabled ? _confirmCollection : null,
+        icon: const Icon(Icons.check_circle_outline),
+        label: Text(_isSaving ? 'Saving...' : 'Confirm Collection'),
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.primaryGreen,
+          disabledBackgroundColor: Colors.grey,
+          foregroundColor: Colors.white,
+          disabledForegroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+        ),
+      ),
+    );
+  }
+
+  String? _requiredNumber(String? value, String emptyMessage) {
+    final trimmedValue = value?.trim() ?? '';
+    if (trimmedValue.isEmpty) {
+      return emptyMessage;
+    }
+
+    final number = double.tryParse(trimmedValue);
     if (number == null || number < 0) {
       return 'Enter a valid quantity';
+    }
+    return null;
+  }
+
+  String? _requiredCondition(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Select a condition';
     }
     return null;
   }
@@ -312,11 +356,13 @@ class _ScanScreenState extends State<ScanScreen> {
 class _VerificationStatus extends StatelessWidget {
   const _VerificationStatus({
     required this.isSupplierVerified,
+    required this.isDevModeVerified,
     required this.scannedSupplierId,
     required this.expectedSupplierId,
   });
 
   final bool isSupplierVerified;
+  final bool isDevModeVerified;
   final String scannedSupplierId;
   final String expectedSupplierId;
 
@@ -345,7 +391,9 @@ class _VerificationStatus extends StatelessWidget {
         Expanded(
           child: Text(
             isSupplierVerified
-                ? 'Supplier verified: $scannedSupplierId'
+                ? isDevModeVerified
+                      ? 'Supplier Verified (DEV MODE)'
+                      : 'Supplier Verified'
                 : 'Scanned: $scannedSupplierId, expected: $expectedSupplierId',
             style: TextStyle(
               color: isSupplierVerified
@@ -376,7 +424,6 @@ class _BarcodeScannerPageState extends State<_BarcodeScannerPage> {
     super.initState();
     _controller = MobileScannerController(
       detectionSpeed: DetectionSpeed.noDuplicates,
-      formats: const [BarcodeFormat.code128],
     );
   }
 
@@ -391,7 +438,15 @@ class _BarcodeScannerPageState extends State<_BarcodeScannerPage> {
       return;
     }
 
-    final value = capture.barcodes.firstOrNull?.rawValue;
+    String? value;
+    for (final barcode in capture.barcodes) {
+      final rawValue = barcode.rawValue;
+      if (rawValue != null && rawValue.trim().isNotEmpty) {
+        value = rawValue;
+        break;
+      }
+    }
+
     if (value == null || value.trim().isEmpty) {
       return;
     }
@@ -427,7 +482,7 @@ class _BarcodeScannerPageState extends State<_BarcodeScannerPage> {
               child: const SafeArea(
                 top: false,
                 child: Text(
-                  'Scan Code 128 supplier barcode: SUP001, SUP002, or SUP003',
+                  'Scan the selected supplier barcode',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Colors.white,
@@ -491,12 +546,22 @@ class _NextSupplierPanel extends StatelessWidget {
               Expanded(child: Text(supplier.location)),
             ],
           ),
+          if (supplier.distance.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(Icons.route_outlined, color: AppColors.primaryGreen),
+                const SizedBox(width: 6),
+                Text(supplier.distance),
+              ],
+            ),
+          ],
           const SizedBox(height: 8),
           Row(
             children: [
-              const Icon(Icons.route_outlined, color: AppColors.primaryGreen),
+              const Icon(Icons.badge_outlined, color: AppColors.primaryGreen),
               const SizedBox(width: 6),
-              Text(supplier.distance),
+              Text('Supplier ID: ${supplier.supplierId}'),
             ],
           ),
           const SizedBox(height: 8),
@@ -507,7 +572,7 @@ class _NextSupplierPanel extends StatelessWidget {
                 color: AppColors.primaryGreen,
               ),
               const SizedBox(width: 6),
-              Text('Expected barcode: ${supplier.id}'),
+              Text('Expected barcode: ${supplier.expectedBarcode}'),
             ],
           ),
         ],
@@ -518,14 +583,65 @@ class _NextSupplierPanel extends StatelessWidget {
 
 class _ScanSupplier {
   const _ScanSupplier({
-    required this.id,
+    required this.supplierId,
     required this.name,
     required this.location,
     required this.distance,
+    required this.barcodeValue,
   });
 
-  final String id;
+  factory _ScanSupplier.fromRouteArguments(Object? arguments) {
+    if (arguments is Map) {
+      final supplierId = _readValue(arguments, 'supplierId', 'SupplierId');
+      return _ScanSupplier(
+        supplierId: supplierId,
+        name: _readValue(
+          arguments,
+          'name',
+          'Name',
+          fallback: 'Selected Supplier',
+        ),
+        location: _readValue(arguments, 'location', 'Location'),
+        distance: _readValue(arguments, 'distance', 'Distance'),
+        barcodeValue: _readValue(
+          arguments,
+          'barcodeValue',
+          'BarcodeValue',
+          fallback: supplierId,
+        ),
+      );
+    }
+
+    return const _ScanSupplier(
+      supplierId: '',
+      name: 'Selected Supplier',
+      location: '',
+      distance: '',
+      barcodeValue: '',
+    );
+  }
+
+  final String supplierId;
   final String name;
   final String location;
   final String distance;
+  final String barcodeValue;
+
+  String get expectedBarcode {
+    if (barcodeValue.trim().isNotEmpty) {
+      return barcodeValue.trim();
+    }
+
+    return supplierId.trim();
+  }
+
+  static String _readValue(
+    Map<dynamic, dynamic> map,
+    String camelCaseKey,
+    String pascalCaseKey, {
+    String fallback = '',
+  }) {
+    final value = map[camelCaseKey] ?? map[pascalCaseKey];
+    return value?.toString() ?? fallback;
+  }
 }

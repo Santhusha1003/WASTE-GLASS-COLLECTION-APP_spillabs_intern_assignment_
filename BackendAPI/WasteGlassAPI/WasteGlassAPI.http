@@ -1,0 +1,32 @@
+@WasteGlassAPI_HostAddress = http://localhost:5255
+
+GET {{WasteGlassAPI_HostAddress}}/api/suppliers
+Accept: application/json
+
+###
+
+GET {{WasteGlassAPI_HostAddress}}/api/suppliers/today
+Accept: application/json
+
+###
+
+POST {{WasteGlassAPI_HostAddress}}/api/collections
+Content-Type: application/json
+
+{
+  "supplierId": "SUP001",
+  "clearKg": 12.5,
+  "coloredKg": 8,
+  "condition": "Good",
+  "timestamp": "2026-06-23T10:00:00Z"
+}
+
+###
+
+GET {{WasteGlassAPI_HostAddress}}/api/collections
+Accept: application/json
+
+###
+
+GET {{WasteGlassAPI_HostAddress}}/api/report
+Accept: application/json
