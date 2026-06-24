@@ -30,6 +30,10 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+var port = Environment.GetEnvironmentVariable("PORT") ?? "10000";
+app.Urls.Clear();
+app.Urls.Add($"http://0.0.0.0:{port}");
+
 app.UseSwagger();
 app.UseSwaggerUI();
 
@@ -38,11 +42,17 @@ app.UseStaticFiles();
 app.UseCors(DevelopmentCorsPolicy);
 app.MapControllers();
 
-using (var scope = app.Services.CreateScope())
+try
 {
+    using var scope = app.Services.CreateScope();
     var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    context.Database.Migrate();
+    await context.Database.EnsureCreatedAsync();
     await DatabaseSeeder.SeedAsync(context);
+}
+catch (Exception ex)
+{
+    Console.WriteLine("Database startup/seed error:");
+    Console.WriteLine(ex);
 }
 
 app.Run();

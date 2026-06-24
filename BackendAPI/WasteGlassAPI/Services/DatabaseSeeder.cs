@@ -9,9 +9,27 @@ public static class DatabaseSeeder
 {
     public static async Task SeedAsync(AppDbContext context)
     {
-        await SeedSuppliersAsync(context);
-        await SeedTodayRouteAsync(context);
-        await RouteScheduler.NormalizeRouteOverflowAsync(context);
+        try
+        {
+            await SeedSuppliersAsync(context);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("Supplier seed error:");
+            Console.WriteLine(ex);
+            return;
+        }
+
+        try
+        {
+            await SeedTodayRouteAsync(context);
+            await RouteScheduler.NormalizeRouteOverflowAsync(context);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("Route seed error:");
+            Console.WriteLine(ex);
+        }
     }
 
     private static async Task SeedSuppliersAsync(AppDbContext context)
@@ -75,26 +93,35 @@ public static class DatabaseSeeder
             }
         };
 
-        foreach (var supplier in suppliers)
+        var hasSuppliers = await context.Suppliers.AnyAsync();
+        var existingSupplierIds = hasSuppliers
+            ? (await context.Suppliers
+                .Select(item => item.SupplierId)
+                .ToListAsync())
+                .ToHashSet()
+            : new HashSet<string>();
+
+        var missingSuppliers = suppliers
+            .Where(supplier => !existingSupplierIds.Contains(supplier.SupplierId))
+            .ToList();
+
+        if (missingSuppliers.Count > 0)
         {
-            var exists = await context.Suppliers
-                .AnyAsync(item => item.SupplierId == supplier.SupplierId);
-
-            if (!exists)
-            {
-                context.Suppliers.Add(supplier);
-            }
+            context.Suppliers.AddRange(missingSuppliers);
+            await context.SaveChangesAsync();
         }
-
-        await context.SaveChangesAsync();
     }
 
     private static async Task SeedTodayRouteAsync(AppDbContext context)
     {
         var today = DateTime.Today;
-        var route = await context.Routes
+        var routeExists = await context.Routes
+            .AnyAsync(item => item.RouteDate.Date == today);
+        var route = routeExists
+            ? await context.Routes
             .Include(item => item.RouteStops)
-            .FirstOrDefaultAsync(item => item.RouteDate.Date == today);
+            .FirstOrDefaultAsync(item => item.RouteDate.Date == today)
+            : null;
 
         if (route is null)
         {
