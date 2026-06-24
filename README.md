@@ -105,10 +105,7 @@ Collection records are saved locally using SQLite and can later be synchronized 
 ---
 
 ## Hosted Backend
-
-### API Base URL
-
-https://waste-glass-collection-app-spillabs.onrender.com
+---
 
 ### Swagger Documentation
 
