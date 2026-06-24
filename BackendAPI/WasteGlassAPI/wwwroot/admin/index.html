@@ -281,7 +281,6 @@
   <script>
     const form = document.getElementById('supplierForm');
     const message = document.getElementById('message');
-    const routeTableBody = document.getElementById('routeTableBody');
     const routeDateInput = document.getElementById('routeDateInput');
     const dateRouteTableBody = document.getElementById('dateRouteTableBody');
     const suppliersTableBody = document.getElementById('suppliersTableBody');
@@ -293,8 +292,23 @@
     const depotLatitude = 7.2906;
     const depotLongitude = 80.6337;
 
-    // Default the route date field to today
-    routeDateField.value = new Date().toISOString().slice(0, 10);
+    // Default both route date fields to today and keep them synchronized.
+    const today = new Date().toISOString().slice(0, 10);
+    if (routeDateField) routeDateField.value = today;
+    if (routeDateInput) routeDateInput.value = today;
+
+    function syncViewRouteDate() {
+      if (routeDateInput) routeDateInput.value = routeDateField.value;
+    }
+
+    function syncAddSupplierRouteDate() {
+      if (routeDateField) routeDateField.value = routeDateInput.value;
+    }
+
+    routeDateField?.addEventListener('input', syncViewRouteDate);
+    routeDateField?.addEventListener('change', syncViewRouteDate);
+    routeDateInput?.addEventListener('input', syncAddSupplierRouteDate);
+    routeDateInput?.addEventListener('change', syncAddSupplierRouteDate);
 
     function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
       const toRadians = value => value * Math.PI / 180;
@@ -330,13 +344,13 @@
         : '';
     }
 
-    latitudeField.addEventListener('input', updateCalculatedDistance);
-    longitudeField.addEventListener('input', updateCalculatedDistance);
-    latitudeField.addEventListener('change', updateCalculatedDistance);
-    longitudeField.addEventListener('change', updateCalculatedDistance);
+    latitudeField?.addEventListener('input', updateCalculatedDistance);
+    longitudeField?.addEventListener('input', updateCalculatedDistance);
+    latitudeField?.addEventListener('change', updateCalculatedDistance);
+    longitudeField?.addEventListener('change', updateCalculatedDistance);
     updateCalculatedDistance();
 
-    form.addEventListener('submit', async (event) => {
+    form?.addEventListener('submit', async (event) => {
       event.preventDefault();
       setMessage('');
 
@@ -351,6 +365,7 @@
         barcodeValue: formData.get('barcodeValue'),
         routeDate: formData.get('routeDate') || null
       };
+      const selectedRouteDate = body.routeDate;
 
       try {
         const result = await request('/api/admin/add-supplier-to-route', {
@@ -361,45 +376,25 @@
 
         setMessage('Supplier added to route successfully');
         form.reset();
-        routeDateField.value = new Date().toISOString().slice(0, 10);
+        // The API may move a stop to the next date when a route is full.
+        const loadedRouteDate = result.routeDate || selectedRouteDate;
+        if (routeDateField) routeDateField.value = loadedRouteDate;
+        if (routeDateInput) routeDateInput.value = loadedRouteDate;
         updateCalculatedDistance();
-        await refreshTables();
+        await Promise.all([
+          loadRouteByDate({ showSuccessMessage: false }),
+          loadAllSuppliers()
+        ]);
       } catch (error) {
         setMessage(error.message, true);
       }
     });
 
-    async function loadTodayRoute() {
-      try {
-        const route = await request('/api/Routes/today');
-        const stops = Array.isArray(route.stops) ? route.stops : [];
-
-        routeTableBody.innerHTML = stops.length === 0
-          ? '<tr><td colspan="8">No route stops found.</td></tr>'
-          : stops.map(stop => `
-              <tr>
-                <td>${escapeHtml(stop.stopSequence)}</td>
-                <td>${escapeHtml(stop.supplierId)}</td>
-                <td>${escapeHtml(stop.name)}</td>
-                <td>${escapeHtml(stop.location)}</td>
-                <td>${escapeHtml(stop.expectedKg)}</td>
-                <td>${escapeHtml(formatNumber(stop.distanceKm))}</td>
-                <td>${escapeHtml(stop.status)}</td>
-                <td class="actions">
-                  <button class="secondary" type="button" onclick="editSupplier('${escapeJs(stop.supplierId)}')">Edit</button>
-                  <button class="danger" type="button" onclick="removeFromTodayRoute('${escapeJs(stop.supplierId)}')">Delete</button>
-                </td>
-              </tr>
-            `).join('');
-      } catch (error) {
-        routeTableBody.innerHTML = `<tr><td colspan="8">${escapeHtml(error.message)}</td></tr>`;
-      }
-    }
-
     async function loadAllSuppliers() {
       try {
         const suppliers = await request('/api/Suppliers');
 
+        if (!suppliersTableBody) return;
         suppliersTableBody.innerHTML = suppliers.length === 0
           ? '<tr><td colspan="6">No suppliers found.</td></tr>'
           : suppliers.map(supplier => `
@@ -416,15 +411,20 @@
               </tr>
             `).join('');
       } catch (error) {
-        suppliersTableBody.innerHTML = `<tr><td colspan="6">${escapeHtml(error.message)}</td></tr>`;
+        if (suppliersTableBody) {
+          suppliersTableBody.innerHTML = `<tr><td colspan="6">${escapeHtml(error.message)}</td></tr>`;
+        }
       }
     }
 
-    async function loadRouteByDate() {
-      const selectedDate = routeDateInput.value;
+    async function loadRouteByDate({ showSuccessMessage = true } = {}) {
+      const selectedDate = routeDateInput?.value;
 
       if (!selectedDate) {
-        dateRouteTableBody.innerHTML = '<tr><td colspan="8">Select a date first.</td></tr>';
+        if (dateRouteTableBody) {
+          dateRouteTableBody.innerHTML = '<tr><td colspan="8">No route found for selected date</td></tr>';
+        }
+        setMessage('No route found for selected date');
         return;
       }
 
@@ -432,6 +432,7 @@
         const route = await request(`/api/Routes/date/${encodeURIComponent(selectedDate)}`);
         const stops = Array.isArray(route.stops) ? route.stops : [];
 
+        if (!dateRouteTableBody) return;
         dateRouteTableBody.innerHTML = stops.length === 0
           ? '<tr><td colspan="8">No route found for selected date</td></tr>'
           : stops.map(stop => `
@@ -449,8 +450,20 @@
                 </td>
               </tr>
             `).join('');
+        if (showSuccessMessage) {
+          setMessage(
+            stops.length === 0 ? 'No route found for selected date' : 'Route loaded successfully'
+          );
+        }
       } catch (error) {
-        dateRouteTableBody.innerHTML = '<tr><td colspan="8">No route found for selected date</td></tr>';
+        const notFound = error.status === 404;
+        const errorMessage = notFound
+          ? 'No route found for selected date'
+          : 'Failed to load route';
+        if (dateRouteTableBody) {
+          dateRouteTableBody.innerHTML = `<tr><td colspan="8">${errorMessage}</td></tr>`;
+        }
+        setMessage(errorMessage, !notFound);
       }
     }
 
@@ -512,7 +525,7 @@
         }
 
         alert('Supplier updated successfully');
-        await loadTodayRoute();
+        await loadRouteByDate({ showSuccessMessage: false });
         await loadAllSuppliers();
       } catch (error) {
         alert(error.message || 'Supplier update failed');
@@ -572,14 +585,19 @@
     }
 
     async function refreshTables() {
-      await Promise.all([loadTodayRoute(), loadAllSuppliers()]);
+      await Promise.all([
+        loadRouteByDate({ showSuccessMessage: false }),
+        loadAllSuppliers()
+      ]);
     }
 
     async function request(url, options) {
       const response = await fetch(url, options);
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(errorText || 'Request failed');
+        const error = new Error(errorText || 'Request failed');
+        error.status = response.status;
+        throw error;
       }
 
       const contentType = response.headers.get('content-type') || '';
@@ -591,6 +609,7 @@
     }
 
     function setMessage(text, isError = false) {
+      if (!message) return;
       message.textContent = text;
       message.classList.toggle('error', isError);
     }
