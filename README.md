@@ -105,7 +105,6 @@ Collection records are saved locally using SQLite and can later be synchronized 
 ---
 
 ## Hosted Backend
----
 
 ### Swagger Documentation
 
