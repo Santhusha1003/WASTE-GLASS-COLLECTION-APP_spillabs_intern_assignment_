@@ -19,6 +19,17 @@ class ApiService {
 
   Dio get client => _dio;
 
+  Options get _freshGetOptions => Options(
+    headers: const {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+    },
+  );
+
+  Map<String, dynamic> get _cacheBuster => {
+    '_': DateTime.now().microsecondsSinceEpoch,
+  };
+
   Future<List<dynamic>> getSuppliers() async {
     try {
       final response = await _dio.get('/api/Suppliers');
@@ -41,7 +52,11 @@ class ApiService {
 
   Future<List<dynamic>> getCollections() async {
     try {
-      final response = await _dio.get('/api/Collections');
+      final response = await _dio.get(
+        '/api/Collections',
+        queryParameters: _cacheBuster,
+        options: _freshGetOptions,
+      );
       return _readList(response.data);
     } catch (error) {
       debugPrint('API getCollections error: $error');
@@ -51,7 +66,11 @@ class ApiService {
 
   Future<Map<String, dynamic>> getReport() async {
     try {
-      final response = await _dio.get('/api/Report');
+      final response = await _dio.get(
+        '/api/Report',
+        queryParameters: _cacheBuster,
+        options: _freshGetOptions,
+      );
       final data = response.data;
       if (data is Map<String, dynamic>) {
         return data;
@@ -68,7 +87,11 @@ class ApiService {
 
   Future<Map<String, dynamic>> getTodayRoute() async {
     try {
-      final response = await _dio.get('/api/Routes/today');
+      final response = await _dio.get(
+        '/api/Routes/today',
+        queryParameters: _cacheBuster,
+        options: _freshGetOptions,
+      );
 
       if (response.data is Map<String, dynamic>) {
         return response.data;
@@ -83,7 +106,11 @@ class ApiService {
 
   Future<Map<String, dynamic>> getRouteByDate(String date) async {
     try {
-      final response = await _dio.get('/api/Routes/date/$date');
+      final response = await _dio.get(
+        '/api/Routes/date/$date',
+        queryParameters: _cacheBuster,
+        options: _freshGetOptions,
+      );
 
       if (response.data is Map<String, dynamic>) {
         return response.data;

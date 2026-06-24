@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../database/local_database.dart';
+import '../services/api_service.dart';
 import '../utils/app_colors.dart';
 
 // ── Palette helpers (mirrors trip_screen) ─────────────────────────────────
@@ -117,18 +118,42 @@ class _ScanScreenState extends State<ScanScreen> {
 
     setState(() => _isSaving = true);
     try {
-      await LocalDatabase.instance.insertCollection(
+      final clearKg = double.parse(_clearGlassController.text.trim());
+      final coloredKg = double.parse(_coloredGlassController.text.trim());
+      final api = ApiService();
+      final submitted = await api.createCollection(
         supplierId: _verifiedSupplierId,
-        clearKg: double.parse(_clearGlassController.text.trim()),
-        coloredKg: double.parse(_coloredGlassController.text.trim()),
+        clearKg: clearKg,
+        coloredKg: coloredKg,
         condition: _condition,
-        timestamp: DateTime.now().toIso8601String(),
       );
+
+      if (submitted) {
+        // Re-read every API resource affected by collection creation before
+        // showing summary/report screens.
+        await Future.wait([
+          api.getCollections(),
+          api.getTodayRoute(),
+          api.getReport(),
+        ]);
+      } else {
+        await LocalDatabase.instance.insertCollection(
+          supplierId: _verifiedSupplierId,
+          clearKg: clearKg,
+          coloredKg: coloredKg,
+          condition: _condition,
+          timestamp: DateTime.now().toIso8601String(),
+        );
+      }
 
       await _loadOfflineSavedCount();
       if (!mounted) return;
 
-      _showSnackBar('Collection saved offline');
+      _showSnackBar(
+        submitted
+            ? 'Collection confirmed successfully'
+            : 'No connection. Collection saved offline',
+      );
       Navigator.pushNamedAndRemoveUntil(context, '/report', (_) => false);
     } catch (_) {
       if (mounted) _showSnackBar('Failed to save collection', isError: true);

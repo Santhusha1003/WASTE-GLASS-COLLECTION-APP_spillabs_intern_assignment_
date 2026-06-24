@@ -70,6 +70,8 @@ class _ReportScreenState extends State<ReportScreen> {
     final syncedCount = await SyncService().syncOfflineCollections();
     if (!mounted) return;
 
+    await _loadBackendReport();
+    if (!mounted) return;
     setState(() {
       _collectionsFuture = LocalDatabase.instance.getCollections();
     });
