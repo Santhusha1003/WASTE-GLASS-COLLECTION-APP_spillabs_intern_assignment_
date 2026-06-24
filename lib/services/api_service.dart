@@ -141,6 +141,10 @@ class ApiService {
         },
       );
 
+      debugPrint(
+        'API createCollection response (${response.statusCode}): ${response.data}',
+      );
+
       return response.statusCode != null &&
           response.statusCode! >= 200 &&
           response.statusCode! < 300;

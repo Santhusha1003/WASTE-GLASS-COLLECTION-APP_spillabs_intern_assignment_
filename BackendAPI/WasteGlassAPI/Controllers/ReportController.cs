@@ -21,6 +21,7 @@ public class ReportController : ControllerBase
     {
         var today = DateTime.Today;
         var route = await _context.Routes
+            .AsNoTracking()
             .Include(item => item.RouteStops)
                 .ThenInclude(routeStop => routeStop.Supplier)
             .FirstOrDefaultAsync(item => item.RouteDate.Date == today);
@@ -35,6 +36,7 @@ public class ReportController : ControllerBase
         var todayEnd   = today.AddDays(1).ToUniversalTime();
 
         var records = await _context.CollectionRecords
+            .AsNoTracking()
             .Where(record => record.Timestamp >= todayStart && record.Timestamp < todayEnd)
             .ToListAsync();
 

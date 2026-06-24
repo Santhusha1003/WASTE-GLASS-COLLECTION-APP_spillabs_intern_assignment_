@@ -73,6 +73,12 @@ public class CollectionsController : ControllerBase
 
         await _context.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(GetCollections), new { id = record.Id }, record);
+        return Ok(new
+        {
+            success = true,
+            supplierId = record.SupplierId,
+            status = "Collected",
+            message = "Collection saved successfully"
+        });
     }
 }

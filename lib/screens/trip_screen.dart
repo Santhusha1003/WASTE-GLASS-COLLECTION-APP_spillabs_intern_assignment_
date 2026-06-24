@@ -209,12 +209,21 @@ class _TripScreenState extends State<TripScreen> with WidgetsBindingObserver {
       await _openReport();
       return;
     }
-    await Navigator.pushNamed(
+    final result = await Navigator.pushNamed(
       context,
       '/scan',
       arguments: todaySuppliers[idx].toMap(),
     );
-    if (mounted) await _loadTodayAndTomorrowRoutes();
+    if (result == true && mounted) await _loadTodayAndTomorrowRoutes();
+  }
+
+  Future<void> _openScanForSupplier(SupplierModel supplier) async {
+    final result = await Navigator.pushNamed(
+      context,
+      '/scan',
+      arguments: supplier.toMap(),
+    );
+    if (result == true && mounted) await _loadTodayAndTomorrowRoutes();
   }
 
   Future<void> _openReport() async {
@@ -378,13 +387,9 @@ class _TripScreenState extends State<TripScreen> with WidgetsBindingObserver {
                   child: FilledButton.icon(
                     onPressed: isCollected || isTomorrow
                         ? null
-                        : () {
+                        : () async {
                             Navigator.pop(sheetCtx);
-                            Navigator.pushNamed(
-                              context,
-                              '/scan',
-                              arguments: supplier.toMap(),
-                            );
+                            await _openScanForSupplier(supplier);
                           },
                     icon: Icon(
                       isCollected

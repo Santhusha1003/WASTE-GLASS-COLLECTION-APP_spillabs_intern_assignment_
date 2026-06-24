@@ -5,6 +5,7 @@ import '../models/collection.dart';
 import '../services/api_service.dart';
 import '../services/sync_service.dart';
 import '../utils/app_colors.dart';
+import '../utils/app_route_observer.dart';
 
 // ── Palette (mirrors trip_screen / scan_screen) ────────────────────────────
 const _kGreen = Color(0xFF0A8F35);
@@ -39,7 +40,7 @@ class ReportScreen extends StatefulWidget {
   State<ReportScreen> createState() => _ReportScreenState();
 }
 
-class _ReportScreenState extends State<ReportScreen> {
+class _ReportScreenState extends State<ReportScreen> with RouteAware {
   late Future<List<CollectionModel>> _collectionsFuture;
   Map<String, dynamic>? backendReport;
   bool isReportLoading = false;
@@ -49,6 +50,32 @@ class _ReportScreenState extends State<ReportScreen> {
     super.initState();
     _collectionsFuture = LocalDatabase.instance.getCollections();
     _loadBackendReport();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route != null) appRouteObserver.subscribe(this, route);
+  }
+
+  @override
+  void didPopNext() {
+    _refreshReport();
+  }
+
+  @override
+  void dispose() {
+    appRouteObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  Future<void> _refreshReport() async {
+    await _loadBackendReport();
+    if (!mounted) return;
+    setState(() {
+      _collectionsFuture = LocalDatabase.instance.getCollections();
+    });
   }
 
   Future<void> _loadBackendReport() async {

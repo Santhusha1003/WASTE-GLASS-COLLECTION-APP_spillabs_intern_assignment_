@@ -129,13 +129,10 @@ class _ScanScreenState extends State<ScanScreen> {
       );
 
       if (submitted) {
-        // Re-read every API resource affected by collection creation before
-        // showing summary/report screens.
-        await Future.wait([
-          api.getCollections(),
-          api.getTodayRoute(),
-          api.getReport(),
-        ]);
+        if (!mounted) return;
+        _showSnackBar('Collection saved successfully');
+        Navigator.pop(context, true);
+        return;
       } else {
         await LocalDatabase.instance.insertCollection(
           supplierId: _verifiedSupplierId,
@@ -149,12 +146,7 @@ class _ScanScreenState extends State<ScanScreen> {
       await _loadOfflineSavedCount();
       if (!mounted) return;
 
-      _showSnackBar(
-        submitted
-            ? 'Collection confirmed successfully'
-            : 'No connection. Collection saved offline',
-      );
-      Navigator.pushNamedAndRemoveUntil(context, '/report', (_) => false);
+      _showSnackBar('No connection. Collection saved offline');
     } catch (_) {
       if (mounted) _showSnackBar('Failed to save collection', isError: true);
     } finally {

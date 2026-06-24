@@ -4,6 +4,7 @@ import 'screens/report_screen.dart';
 import 'screens/scan_screen.dart';
 import 'screens/trip_screen.dart';
 import 'utils/app_colors.dart';
+import 'utils/app_route_observer.dart';
 
 void main() {
   runApp(const WasteGlassCollectionApp());
@@ -69,6 +70,7 @@ class WasteGlassCollectionApp extends StatelessWidget {
         ),
       ),
       initialRoute: '/trip',
+      navigatorObservers: [appRouteObserver],
       routes: {
         '/trip': (context) => const TripScreen(),
         '/scan': (context) => const ScanScreen(),

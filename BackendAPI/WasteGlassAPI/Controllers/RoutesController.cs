@@ -61,15 +61,20 @@ public class RoutesController : ControllerBase
 
     private static object BuildRouteResponse(WasteGlassRoute route)
     {
+        var orderedStops = route.RouteStops
+            .OrderBy(stop => stop.StopSequence)
+            .Take(5)
+            .ToList();
+        var nextStopId = orderedStops
+            .FirstOrDefault(stop => stop.Status != "Collected")?.Id;
+
         return new
         {
             routeId = route.Id,
             routeDate = route.RouteDate.ToString("yyyy-MM-dd"),
             driverName = route.DriverName,
             status = route.Status,
-            stops = route.RouteStops
-                .OrderBy(stop => stop.StopSequence)
-                .Take(5)
+            stops = orderedStops
                 .Select(stop => new
                 {
                     stopSequence = stop.StopSequence,
@@ -81,8 +86,10 @@ public class RoutesController : ControllerBase
                     expectedKg = stop.Supplier.ExpectedKg,
                     distanceKm = stop.DistanceKm,
                     barcodeValue = stop.Supplier.BarcodeValue,
-                    // Status comes ONLY from this route's RouteStop — never from global Supplier.Status
-                    status = stop.Status == "Collected" ? "Collected" : "Pending"
+                    // Route display status comes only from this date's RouteStop.
+                    status = stop.Status == "Collected"
+                        ? "Collected"
+                        : stop.Id == nextStopId ? "Next" : "Pending"
                 })
         };
     }
