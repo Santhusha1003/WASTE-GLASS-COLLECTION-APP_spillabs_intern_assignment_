@@ -157,9 +157,18 @@ public class AdminController : ControllerBase
             await _context.SaveChangesAsync();
         }
 
+        // Use the requested date (default today) as the starting point for placement
+        var requestedDate = request.RouteDate.HasValue
+            ? request.RouteDate.Value.Date
+            : DateTime.Today;
+
         await RouteScheduler.NormalizeRouteOverflowAsync(_context);
 
-        var route = await RouteScheduler.GetAvailableRouteAsync(_context);
+        // Find the first available date on or after the requested date
+        var targetDate = await RouteScheduler.FindAvailableRouteDateStartingFrom(
+            _context, requestedDate);
+        var route = await RouteScheduler.FindOrCreateRouteForDateAsync(_context, targetDate);
+
         var stopCount = await _context.RouteStops
             .CountAsync(item => item.RouteId == route.Id);
         var stopSequence = stopCount + 1;
@@ -201,13 +210,22 @@ public class AdminController : ControllerBase
         });
     }
 
+    [HttpPost("normalize-routes")]
+    public async Task<IActionResult> NormalizeRoutes()
+    {
+        await RouteScheduler.NormalizeRouteOverflowAsync(_context);
+        return Ok(new { message = "Routes normalized successfully" });
+    }
+
     [HttpPost("reset-demo-data")]
     public async Task<IActionResult> ResetDemoData()
     {
+        // Wipe everything so no stale statuses can bleed across dates
         _context.CollectionRecords.RemoveRange(await _context.CollectionRecords.ToListAsync());
         _context.RouteStops.RemoveRange(await _context.RouteStops.ToListAsync());
         _context.Routes.RemoveRange(await _context.Routes.ToListAsync());
 
+        // Reset all supplier statuses to Pending
         var suppliers = await _context.Suppliers.ToListAsync();
         foreach (var supplier in suppliers)
         {
@@ -217,6 +235,7 @@ public class AdminController : ControllerBase
         await EnsureDemoSuppliersAsync();
         await _context.SaveChangesAsync();
 
+        // Create a fresh route for today only
         var todayRoute = new WasteGlassRoute
         {
             RouteDate = DateTime.Today,
@@ -237,7 +256,7 @@ public class AdminController : ControllerBase
                 SupplierId = demoStopSupplierIds[index],
                 StopSequence = index + 1,
                 DistanceKm = index + 1,
-                Status = "Pending"
+                Status = "Pending"  // Always Pending — never inherit old status
             });
         }
 
@@ -250,6 +269,24 @@ public class AdminController : ControllerBase
             routeDate = todayRoute.RouteDate.ToString("yyyy-MM-dd"),
             stopCount = demoStopSupplierIds.Length
         });
+    }
+
+    [HttpPost("clear-all-trip-data")]
+    public async Task<IActionResult> ClearAllTripData()
+    {
+        _context.CollectionRecords.RemoveRange(await _context.CollectionRecords.ToListAsync());
+        _context.RouteStops.RemoveRange(await _context.RouteStops.ToListAsync());
+        _context.Routes.RemoveRange(await _context.Routes.ToListAsync());
+
+        var suppliers = await _context.Suppliers.ToListAsync();
+        foreach (var supplier in suppliers)
+        {
+            supplier.Status = "Pending";
+        }
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = "All trip data cleared. Suppliers reset to Pending." });
     }
 
     private async Task EnsureDemoSuppliersAsync()
@@ -343,6 +380,8 @@ public class AddSupplierToRouteRequest
     public double ExpectedKg { get; set; }
     public double DistanceKm { get; set; }
     public string BarcodeValue { get; set; } = string.Empty;
+    /// <summary>Optional target date (yyyy-MM-dd). Defaults to today when null.</summary>
+    public DateTime? RouteDate { get; set; }
 }
 
 public class UpdateSupplierRequest

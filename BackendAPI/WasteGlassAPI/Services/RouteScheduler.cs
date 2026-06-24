@@ -45,9 +45,10 @@ public static class RouteScheduler
     {
         var today = DateTime.Today;
 
+        // Only normalize stops from today onwards — never touch past routes
         var stops = await context.RouteStops
             .Include(stop => stop.Route)
-            .Where(stop => stop.Route.RouteDate >= today)
+            .Where(stop => stop.Route.RouteDate.Date >= today)
             .OrderBy(stop => stop.Route.RouteDate)
             .ThenBy(stop => stop.StopSequence)
             .ThenBy(stop => stop.Id)
@@ -79,6 +80,14 @@ public static class RouteScheduler
     public static Task RebalanceRoutesAsync(AppDbContext context)
     {
         return NormalizeRouteOverflowAsync(context);
+    }
+
+    /// <summary>Public accessor used by AdminController for date-targeted route creation.</summary>
+    public static Task<WasteGlassRoute> FindOrCreateRouteForDateAsync(
+        AppDbContext context,
+        DateTime routeDate)
+    {
+        return FindOrCreateRouteAsync(context, routeDate);
     }
 
     private static async Task<WasteGlassRoute> FindOrCreateRouteAsync(

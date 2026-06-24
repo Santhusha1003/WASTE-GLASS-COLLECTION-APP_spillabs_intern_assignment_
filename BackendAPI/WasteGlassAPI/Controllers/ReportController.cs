@@ -30,27 +30,38 @@ public class ReportController : ControllerBase
             return Ok(new ReportDto());
         }
 
-        var records = await _context.CollectionRecords.ToListAsync();
+        // Only count collection records whose timestamp falls on today's date
+        var todayStart = today.ToUniversalTime();
+        var todayEnd   = today.AddDays(1).ToUniversalTime();
+
+        var records = await _context.CollectionRecords
+            .Where(record => record.Timestamp >= todayStart && record.Timestamp < todayEnd)
+            .ToListAsync();
 
         var supplierSummaries = route.RouteStops
             .OrderBy(routeStop => routeStop.StopSequence)
             .Where(routeStop => routeStop.Supplier is not null)
             .Select(routeStop =>
-        {
-            var supplier = routeStop.Supplier;
-            var collectedKg = records
-                .Where(record => record.SupplierId == routeStop.SupplierId)
-                .Sum(record => record.ClearKg + record.ColoredKg);
-
-            return new SupplierSummaryDto
             {
-                SupplierId = routeStop.SupplierId,
-                Name = supplier.Name,
-                ExpectedKg = supplier.ExpectedKg,
-                CollectedKg = collectedKg,
-                Status = collectedKg > 0 ? "Collected" : supplier.Status
-            };
-        }).ToList();
+                var supplier = routeStop.Supplier;
+                var collectedKg = records
+                    .Where(record => record.SupplierId == routeStop.SupplierId)
+                    .Sum(record => record.ClearKg + record.ColoredKg);
+
+                // Status from RouteStop, not global Supplier.Status
+                var status = routeStop.Status == "Collected" ? "Collected"
+                    : collectedKg > 0 ? "Collected"
+                    : "Pending";
+
+                return new SupplierSummaryDto
+                {
+                    SupplierId = routeStop.SupplierId,
+                    Name = supplier.Name,
+                    ExpectedKg = supplier.ExpectedKg,
+                    CollectedKg = collectedKg,
+                    Status = status
+                };
+            }).ToList();
 
         var shortfalls = supplierSummaries
             .Where(summary => summary.CollectedKg < summary.ExpectedKg)

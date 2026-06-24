@@ -150,6 +150,7 @@
       <p>Manage suppliers and today's collection route.</p>
       <div class="toolbar">
         <button class="reset-button" type="button" onclick="resetDemoData()">Reset Demo Data</button>
+        <button class="reset-button" type="button" onclick="clearAllTripData()">Clear All Trip Data</button>
       </div>
       <div id="message" role="status"></div>
     </section>
@@ -187,6 +188,11 @@
         <label>
           Barcode Value
           <input name="barcodeValue" required>
+        </label>
+
+        <label>
+          Route Date
+          <input name="routeDate" type="date" id="routeDateField">
         </label>
 
         <button class="full" type="submit">Add Supplier To Today Route</button>
@@ -282,6 +288,10 @@
     const routeDateInput = document.getElementById('routeDateInput');
     const dateRouteTableBody = document.getElementById('dateRouteTableBody');
     const suppliersTableBody = document.getElementById('suppliersTableBody');
+    const routeDateField = document.getElementById('routeDateField');
+
+    // Default the route date field to today
+    routeDateField.value = new Date().toISOString().slice(0, 10);
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -296,7 +306,8 @@
         longitude: 0,
         expectedKg: Number(formData.get('expectedKg')),
         distanceKm: Number(formData.get('distanceKm')),
-        barcodeValue: formData.get('barcodeValue')
+        barcodeValue: formData.get('barcodeValue'),
+        routeDate: formData.get('routeDate') || null
       };
 
       try {
@@ -500,6 +511,21 @@
         });
 
         setMessage('Demo data reset successfully');
+        await refreshTables();
+      } catch (error) {
+        setMessage(error.message, true);
+      }
+    }
+
+    async function clearAllTripData() {
+      if (!confirm('Clear ALL trip data (routes, stops, collections)? Suppliers will be kept but reset to Pending.')) return;
+
+      try {
+        await request('/api/admin/clear-all-trip-data', {
+          method: 'POST'
+        });
+
+        setMessage('All trip data cleared successfully');
         await refreshTables();
       } catch (error) {
         setMessage(error.message, true);

@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using WasteGlassAPI.Data;
-using WasteGlassAPI.Services;
 using WasteGlassRoute = WasteGlassAPI.Models.Route;
 
 namespace WasteGlassAPI.Controllers;
@@ -20,8 +19,6 @@ public class RoutesController : ControllerBase
     [HttpGet("today")]
     public async Task<IActionResult> GetTodayRoute()
     {
-        await RouteScheduler.NormalizeRouteOverflowAsync(_context);
-
         var today = DateTime.Today;
         var route = await _context.Routes
             .Include(item => item.RouteStops)
@@ -44,8 +41,6 @@ public class RoutesController : ControllerBase
             return BadRequest("Invalid date. Use YYYY-MM-DD.");
         }
 
-        await RouteScheduler.NormalizeRouteOverflowAsync(_context);
-
         var route = await _context.Routes
             .Include(item => item.RouteStops)
             .ThenInclude(stop => stop.Supplier)
@@ -64,7 +59,7 @@ public class RoutesController : ControllerBase
         return new
         {
             routeId = route.Id,
-            routeDate = route.RouteDate,
+            routeDate = route.RouteDate.ToString("yyyy-MM-dd"),
             driverName = route.DriverName,
             status = route.Status,
             stops = route.RouteStops
@@ -81,11 +76,8 @@ public class RoutesController : ControllerBase
                     expectedKg = stop.Supplier.ExpectedKg,
                     distanceKm = stop.DistanceKm,
                     barcodeValue = stop.Supplier.BarcodeValue,
-                    status =
-                        stop.Status == "Collected" ||
-                        stop.Supplier.Status == "Collected"
-                            ? "Collected"
-                            : "Pending"
+                    // Status comes ONLY from this route's RouteStop — never from global Supplier.Status
+                    status = stop.Status == "Collected" ? "Collected" : "Pending"
                 })
         };
     }

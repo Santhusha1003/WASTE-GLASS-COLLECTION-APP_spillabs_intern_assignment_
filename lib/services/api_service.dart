@@ -80,6 +80,21 @@ class ApiService {
     }
   }
 
+  Future<Map<String, dynamic>> getRouteByDate(String date) async {
+    try {
+      final response = await _dio.get('/api/Routes/date/$date');
+
+      if (response.data is Map<String, dynamic>) {
+        return response.data;
+      }
+
+      return Map<String, dynamic>.from(response.data);
+    } catch (error) {
+      debugPrint('API getRouteByDate error: $error');
+      return {};
+    }
+  }
+
   Future<bool> createCollection({
     required String supplierId,
     required double clearKg,
