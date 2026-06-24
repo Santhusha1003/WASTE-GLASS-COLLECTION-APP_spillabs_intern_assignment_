@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using WasteGlassAPI.Data;
 using WasteGlassAPI.Models;
+using WasteGlassAPI.Services;
 
 namespace WasteGlassAPI.Controllers;
 
@@ -10,10 +11,12 @@ namespace WasteGlassAPI.Controllers;
 public class SuppliersController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly RouteScheduler _routeScheduler;
 
-    public SuppliersController(AppDbContext context)
+    public SuppliersController(AppDbContext context, RouteScheduler routeScheduler)
     {
         _context = context;
+        _routeScheduler = routeScheduler;
     }
 
     [HttpGet]
@@ -60,23 +63,17 @@ public class SuppliersController : ControllerBase
             : request.BarcodeValue.Trim().ToUpperInvariant();
         supplier.Status = request.Status.Trim();
 
-        RouteStop? routeStop = null;
-        if (request.DistanceKm.HasValue)
-        {
-            var today = DateTime.Today;
-            routeStop = await _context.RouteStops
-                .Include(item => item.Route)
-                .FirstOrDefaultAsync(item =>
-                    item.SupplierId == normalizedSupplierId &&
-                    item.Route.RouteDate.Date == today);
-
-            if (routeStop is not null)
-            {
-                routeStop.DistanceKm = request.DistanceKm.Value;
-            }
-        }
-
         await _context.SaveChangesAsync();
+
+        var routeIds = await _context.RouteStops
+            .Where(item => item.SupplierId == normalizedSupplierId)
+            .Select(item => item.RouteId)
+            .Distinct()
+            .ToListAsync();
+        foreach (var routeId in routeIds)
+        {
+            await _routeScheduler.OptimizeRouteAsync(routeId);
+        }
 
         return Ok(new
         {
@@ -90,8 +87,7 @@ public class SuppliersController : ControllerBase
                 supplier.Longitude,
                 supplier.ExpectedKg,
                 supplier.BarcodeValue,
-                supplier.Status,
-                distanceKm = routeStop?.DistanceKm
+                supplier.Status
             }
         });
     }

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using WasteGlassAPI.Data;
+using WasteGlassAPI.Services;
 using WasteGlassRoute = WasteGlassAPI.Models.Route;
 
 namespace WasteGlassAPI.Controllers;
@@ -10,10 +11,12 @@ namespace WasteGlassAPI.Controllers;
 public class RoutesController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly RouteScheduler _routeScheduler;
 
-    public RoutesController(AppDbContext context)
+    public RoutesController(AppDbContext context, RouteScheduler routeScheduler)
     {
         _context = context;
+        _routeScheduler = routeScheduler;
     }
 
     [HttpGet("today")]
@@ -30,6 +33,7 @@ public class RoutesController : ControllerBase
             return NotFound("No active route found for today.");
         }
 
+        await _routeScheduler.OptimizeRouteAsync(route.Id);
         return Ok(BuildRouteResponse(route));
     }
 
@@ -51,6 +55,7 @@ public class RoutesController : ControllerBase
             return NotFound("No route found for selected date.");
         }
 
+        await _routeScheduler.OptimizeRouteAsync(route.Id);
         return Ok(BuildRouteResponse(route));
     }
 

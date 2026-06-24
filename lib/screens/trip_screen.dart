@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -21,6 +23,7 @@ class SupplierModel {
     required this.location,
     required this.expectedKg,
     required this.distanceKm,
+    required this.stopSequence,
     required this.barcodeValue,
     required this.status,
   });
@@ -30,6 +33,7 @@ class SupplierModel {
   final String location;
   final double expectedKg;
   final double distanceKm;
+  final int stopSequence;
   final String barcodeValue;
   final String status;
 
@@ -40,6 +44,7 @@ class SupplierModel {
     'expectedKg': expectedKg,
     'distanceKm': distanceKm,
     'distance': '${distanceKm.toStringAsFixed(1)} km',
+    'stopSequence': stopSequence,
     'barcodeValue': barcodeValue,
     'status': status,
   };
@@ -55,56 +60,84 @@ class TripScreen extends StatefulWidget {
   State<TripScreen> createState() => _TripScreenState();
 }
 
-class _TripScreenState extends State<TripScreen> {
-  List<SupplierModel> suppliers = [];
+class _TripScreenState extends State<TripScreen> with WidgetsBindingObserver {
+  List<SupplierModel> todaySuppliers = [];
+  List<SupplierModel> tomorrowSuppliers = [];
   bool isLoading = true;
   bool _completionDialogShown = false;
-  DateTime _selectedDate = DateTime.now();
-
-  bool get _isToday {
-    final now = DateTime.now();
-    return _selectedDate.year == now.year &&
-        _selectedDate.month == now.month &&
-        _selectedDate.day == now.day;
-  }
+  late DateTime _loadedDay;
+  Timer? _dayChangeTimer;
 
   @override
   void initState() {
     super.initState();
-    _loadRoute();
+    WidgetsBinding.instance.addObserver(this);
+    _loadedDay = _dateOnly(DateTime.now());
+    _loadTodayAndTomorrowRoutes();
+    _dayChangeTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => _reloadIfDayChanged(),
+    );
   }
 
-  Future<void> _loadRoute() async {
+  @override
+  void dispose() {
+    _dayChangeTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _reloadIfDayChanged();
+  }
+
+  DateTime _dateOnly(DateTime value) =>
+      DateTime(value.year, value.month, value.day);
+
+  void _reloadIfDayChanged() {
+    final currentDay = _dateOnly(DateTime.now());
+    if (currentDay != _loadedDay) _loadTodayAndTomorrowRoutes();
+  }
+
+  List<SupplierModel> _mapStops(Map<String, dynamic> route) {
+    final stops = route['stops'] as List<dynamic>? ?? [];
+    return stops.asMap().entries.map((entry) {
+      final item = entry.value;
+      return SupplierModel(
+        supplierId: item['supplierId']?.toString() ?? '',
+        name: item['name']?.toString() ?? '',
+        location: item['location']?.toString() ?? '',
+        expectedKg: (item['expectedKg'] as num?)?.toDouble() ?? 0,
+        distanceKm: (item['distanceKm'] as num?)?.toDouble() ?? 0,
+        stopSequence: (item['stopSequence'] as num?)?.toInt() ?? entry.key + 1,
+        barcodeValue: item['barcodeValue']?.toString() ?? '',
+        status: item['status']?.toString() ?? '',
+      );
+    }).toList();
+  }
+
+  Future<void> _loadTodayAndTomorrowRoutes() async {
     setState(() {
       isLoading = true;
       _completionDialogShown = false;
     });
 
     try {
-      // Always use getRouteByDate with the explicit selected date.
-      // This guarantees we only ever load the exact date's RouteStops.
-      final dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
-      final route = await ApiService().getRouteByDate(dateStr);
-
-      debugPrint('========== ROUTE FOR $dateStr ==========');
-      debugPrint(route.toString());
-      debugPrint('=========================================');
-
-      final stops = route['stops'] as List<dynamic>? ?? [];
+      final today = _dateOnly(DateTime.now());
+      final tomorrow = today.add(const Duration(days: 1));
+      final todayDate = DateFormat('yyyy-MM-dd').format(today);
+      final tomorrowDate = DateFormat('yyyy-MM-dd').format(tomorrow);
+      final routes = await Future.wait([
+        ApiService().getRouteByDate(todayDate),
+        ApiService().getRouteByDate(tomorrowDate),
+      ]);
       if (!mounted) return;
 
       setState(() {
-        suppliers = stops.map((item) {
-          return SupplierModel(
-            supplierId: item['supplierId']?.toString() ?? '',
-            name: item['name']?.toString() ?? '',
-            location: item['location']?.toString() ?? '',
-            expectedKg: (item['expectedKg'] as num?)?.toDouble() ?? 0,
-            distanceKm: (item['distanceKm'] as num?)?.toDouble() ?? 0,
-            barcodeValue: item['barcodeValue']?.toString() ?? '',
-            status: item['status']?.toString() ?? '',
-          );
-        }).toList();
+        _loadedDay = today;
+        todaySuppliers = _mapStops(routes[0]);
+        tomorrowSuppliers = _mapStops(routes[1]);
         isLoading = false;
       });
 
@@ -113,46 +146,28 @@ class _TripScreenState extends State<TripScreen> {
       debugPrint('Load route error: $error');
       if (!mounted) return;
       setState(() {
-        suppliers = [];
+        todaySuppliers = [];
+        tomorrowSuppliers = [];
         isLoading = false;
       });
     }
   }
 
-  // Keep backward-compatible alias used by RefreshIndicator
-  Future<void> _loadSuppliersFromApi() => _loadRoute();
-
-  Future<void> _pickDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate,
-      firstDate: DateTime(2024),
-      lastDate: DateTime.now().add(const Duration(days: 30)),
-      builder: (ctx, child) => Theme(
-        data: Theme.of(
-          ctx,
-        ).copyWith(colorScheme: const ColorScheme.light(primary: _kGreen)),
-        child: child!,
-      ),
-    );
-    if (picked == null) return;
-    setState(() => _selectedDate = picked);
-    await _loadRoute();
-  }
+  Future<void> _loadSuppliersFromApi() => _loadTodayAndTomorrowRoutes();
 
   // ── Computed props ──────────────────────────────────────────────────────
   int get remainingStops =>
-      suppliers.where((s) => s.status.toLowerCase() != 'collected').length;
+      todaySuppliers.where((s) => s.status.toLowerCase() != 'collected').length;
 
   double get totalDistance =>
-      suppliers.fold<double>(0, (sum, s) => sum + s.distanceKm);
+      todaySuppliers.fold<double>(0, (sum, s) => sum + s.distanceKm);
 
-  bool get allCollected => suppliers.isNotEmpty && remainingStops == 0;
+  bool get allCollected => todaySuppliers.isNotEmpty && remainingStops == 0;
 
   /// Returns the index of the first pending stop, or -1.
   int get _nextStopIndex {
-    for (var i = 0; i < suppliers.length; i++) {
-      if (suppliers[i].status.toLowerCase() != 'collected') return i;
+    for (var i = 0; i < todaySuppliers.length; i++) {
+      if (todaySuppliers[i].status.toLowerCase() != 'collected') return i;
     }
     return -1;
   }
@@ -166,7 +181,7 @@ class _TripScreenState extends State<TripScreen> {
   }
 
   String get _estimatedDuration {
-    final totalMinutes = suppliers.length * 30;
+    final totalMinutes = todaySuppliers.length * 30;
     return _formatDuration(totalMinutes);
   }
 
@@ -181,11 +196,17 @@ class _TripScreenState extends State<TripScreen> {
       Navigator.pushNamed(context, '/report');
       return;
     }
-    Navigator.pushNamed(context, '/scan', arguments: suppliers[idx].toMap());
+    Navigator.pushNamed(
+      context,
+      '/scan',
+      arguments: todaySuppliers[idx].toMap(),
+    );
   }
 
   void _showCompletionDialogIfNeeded() {
-    if (_completionDialogShown || suppliers.isEmpty || remainingStops != 0) {
+    if (_completionDialogShown ||
+        todaySuppliers.isEmpty ||
+        remainingStops != 0) {
       return;
     }
     _completionDialogShown = true;
@@ -216,7 +237,10 @@ class _TripScreenState extends State<TripScreen> {
     });
   }
 
-  void _showSupplierDetails(SupplierModel supplier) {
+  void _showSupplierDetails(
+    SupplierModel supplier, {
+    required bool isTomorrow,
+  }) {
     final isCollected = supplier.status.toLowerCase() == 'collected';
     showModalBottomSheet<void>(
       context: context,
@@ -264,7 +288,10 @@ class _TripScreenState extends State<TripScreen> {
                       ),
                     ),
                     const SizedBox(width: 10),
-                    StatusChip(status: supplier.status),
+                    StatusChip(
+                      status: supplier.status,
+                      forcePending: isTomorrow,
+                    ),
                   ],
                 ),
                 const SizedBox(height: 20),
@@ -307,12 +334,30 @@ class _TripScreenState extends State<TripScreen> {
                   value: supplier.status,
                 ),
                 const SizedBox(height: 20),
+                if (isTomorrow) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: _kGreenLight,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Text(
+                      'This stop is scheduled for tomorrow.',
+                      style: TextStyle(
+                        color: _kGreenDark,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 // Navigate button
                 SizedBox(
                   width: double.infinity,
                   height: 52,
                   child: FilledButton.icon(
-                    onPressed: isCollected
+                    onPressed: isCollected || isTomorrow
                         ? null
                         : () {
                             Navigator.pop(sheetCtx);
@@ -328,7 +373,11 @@ class _TripScreenState extends State<TripScreen> {
                           : Icons.navigation_outlined,
                     ),
                     label: Text(
-                      isCollected ? 'Already Collected' : 'Navigate & Collect',
+                      isTomorrow
+                          ? 'Available Tomorrow'
+                          : isCollected
+                          ? 'Already Collected'
+                          : 'Navigate & Collect',
                     ),
                     style: FilledButton.styleFrom(
                       backgroundColor: _kGreen,
@@ -378,18 +427,17 @@ class _TripScreenState extends State<TripScreen> {
   // ── build ────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final dateLabel = DateFormat('EEEE, d MMMM yyyy').format(_selectedDate);
+    final today = _dateOnly(DateTime.now());
+    final tomorrow = today.add(const Duration(days: 1));
+    final todayLabel = DateFormat('EEEE, d MMMM yyyy').format(today);
+    final tomorrowLabel = DateFormat('EEEE, d MMMM yyyy').format(tomorrow);
 
     return Scaffold(
       backgroundColor: AppColors.backgroundColor,
       body: Column(
         children: [
           // ── GRADIENT HEADER ──────────────────────────────────────────────
-          _GradientHeader(
-            dateLabel: dateLabel,
-            isToday: _isToday,
-            onPickDate: _pickDate,
-          ),
+          _GradientHeader(dateLabel: todayLabel),
 
           // ── SCROLLABLE BODY ──────────────────────────────────────────────
           Expanded(
@@ -437,75 +485,56 @@ class _TripScreenState extends State<TripScreen> {
                                     color: AppColors.textDark,
                                   ),
                             ),
-                            const Spacer(),
-                            Text(
-                              isLoading ? '' : '${suppliers.length} stops',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: AppColors.mutedText,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                            ),
                           ],
                         ),
-                        const SizedBox(height: 10),
-
                         const SizedBox(height: 14),
                       ]),
                     ),
                   ),
 
-                  // ── STOP CARDS LIST ──────────────────────────────────────
                   if (isLoading)
                     const SliverFillRemaining(
                       child: Center(
                         child: CircularProgressIndicator(color: _kGreen),
                       ),
                     )
-                  else if (suppliers.isEmpty)
-                    SliverFillRemaining(
-                      child: Center(
+                  else
+                    SliverPadding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      sliver: SliverToBoxAdapter(
                         child: Column(
-                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(
-                              Icons.route_outlined,
-                              size: 56,
-                              color: AppColors.mutedText,
+                            _RouteDateSection(
+                              sectionLabel: 'Today',
+                              dateText: todayLabel,
+                              suppliers: todaySuppliers,
+                              nextStopIndex: _nextStopIndex,
+                              emptyMessage: 'No stops scheduled for today',
+                              onSupplierTap: (supplier) => _showSupplierDetails(
+                                supplier,
+                                isTomorrow: false,
+                              ),
                             ),
-                            const SizedBox(height: 12),
-                            Text(
-                              _isToday
-                                  ? 'No stops for today'
-                                  : 'No route scheduled for this date',
-                              style: const TextStyle(
-                                color: AppColors.mutedText,
-                                fontWeight: FontWeight.w700,
+                            const SizedBox(height: 20),
+                            _RouteDateSection(
+                              sectionLabel: 'Tomorrow',
+                              dateText: tomorrowLabel,
+                              suppliers: tomorrowSuppliers,
+                              nextStopIndex: -1,
+                              emptyMessage: 'No stops scheduled for tomorrow',
+                              forcePending: true,
+                              onSupplierTap: (supplier) => _showSupplierDetails(
+                                supplier,
+                                isTomorrow: true,
                               ),
                             ),
                           ],
                         ),
                       ),
-                    )
-                  else
-                    SliverPadding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      sliver: SliverList(
-                        delegate: SliverChildBuilderDelegate((context, index) {
-                          final supplier = suppliers[index];
-                          final isNext = index == _nextStopIndex;
-                          return StopCard(
-                            supplier: supplier,
-                            sequenceNumber: index + 1,
-                            isNext: isNext,
-                            onTap: () => _showSupplierDetails(supplier),
-                          );
-                        }, childCount: suppliers.length),
-                      ),
                     ),
 
                   // ── BOTTOM INFO PANEL ────────────────────────────────────
-                  if (!isLoading && suppliers.isNotEmpty)
+                  if (!isLoading && todaySuppliers.isNotEmpty)
                     SliverPadding(
                       padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
                       sliver: SliverToBoxAdapter(
@@ -544,15 +573,9 @@ class _TripScreenState extends State<TripScreen> {
 // _GradientHeader
 // ═══════════════════════════════════════════════════════════════════════════
 class _GradientHeader extends StatelessWidget {
-  const _GradientHeader({
-    required this.dateLabel,
-    required this.isToday,
-    required this.onPickDate,
-  });
+  const _GradientHeader({required this.dateLabel});
 
   final String dateLabel;
-  final bool isToday;
-  final VoidCallback onPickDate;
 
   @override
   Widget build(BuildContext context) {
@@ -611,7 +634,7 @@ class _GradientHeader extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              isToday ? "Today's Route" : "Route for Selected Date",
+              "Today's Route",
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 15,
@@ -619,45 +642,31 @@ class _GradientHeader extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
-            GestureDetector(
-              onTap: onPickDate,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.4),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.4)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.calendar_today_outlined,
+                    color: Colors.white,
+                    size: 13,
                   ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.calendar_today_outlined,
+                  const SizedBox(width: 6),
+                  Text(
+                    'Today — $dateLabel',
+                    style: const TextStyle(
                       color: Colors.white,
-                      size: 13,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
                     ),
-                    const SizedBox(width: 6),
-                    Text(
-                      isToday ? 'Today — $dateLabel' : dateLabel,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    const Icon(
-                      Icons.expand_more_rounded,
-                      color: Colors.white70,
-                      size: 14,
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -735,19 +744,136 @@ class RouteSummaryCard extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// _RouteDateSection
+// ═══════════════════════════════════════════════════════════════════════════
+class _RouteDateSection extends StatelessWidget {
+  const _RouteDateSection({
+    required this.sectionLabel,
+    required this.dateText,
+    required this.suppliers,
+    required this.nextStopIndex,
+    required this.emptyMessage,
+    required this.onSupplierTap,
+    this.forcePending = false,
+  });
+
+  final String sectionLabel;
+  final String dateText;
+  final List<SupplierModel> suppliers;
+  final int nextStopIndex;
+  final String emptyMessage;
+  final ValueChanged<SupplierModel> onSupplierTap;
+  final bool forcePending;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 4),
+      decoration: BoxDecoration(
+        color: _kGreenLight.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: _kGreen.withValues(alpha: 0.13)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: _kGreen,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  sectionLabel,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${suppliers.length} ${suppliers.length == 1 ? 'stop' : 'stops'}',
+                style: const TextStyle(
+                  color: _kBlueGrey,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            dateText,
+            style: const TextStyle(
+              color: AppColors.textDark,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 14),
+          if (suppliers.isEmpty)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.8),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Text(
+                emptyMessage,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: AppColors.mutedText,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            )
+          else
+            for (var index = 0; index < suppliers.length; index++)
+              StopCard(
+                supplier: suppliers[index],
+                sequenceNumber: suppliers[index].stopSequence > 0
+                    ? suppliers[index].stopSequence
+                    : index + 1,
+                isNext: index == nextStopIndex,
+                forcePending: forcePending,
+                onTap: () => onSupplierTap(suppliers[index]),
+              ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // StatusChip  (reusable widget)
 // ═══════════════════════════════════════════════════════════════════════════
 class StatusChip extends StatelessWidget {
-  const StatusChip({super.key, required this.status, this.isNext = false});
+  const StatusChip({
+    super.key,
+    required this.status,
+    this.isNext = false,
+    this.forcePending = false,
+  });
 
   final String status;
   final bool isNext;
+  final bool forcePending;
 
   @override
   Widget build(BuildContext context) {
     final normalized = status.toLowerCase();
     final bool collected = normalized == 'collected';
-    final bool next = isNext || normalized == 'next';
+    final bool next = !forcePending && (isNext || normalized == 'next');
 
     Color bgColor;
     Color textColor;
@@ -803,12 +929,14 @@ class StopCard extends StatelessWidget {
     required this.sequenceNumber,
     required this.isNext,
     required this.onTap,
+    this.forcePending = false,
   });
 
   final SupplierModel supplier;
   final int sequenceNumber;
   final bool isNext;
   final VoidCallback onTap;
+  final bool forcePending;
 
   @override
   Widget build(BuildContext context) {
@@ -910,7 +1038,11 @@ class StopCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  StatusChip(status: supplier.status, isNext: isNext),
+                  StatusChip(
+                    status: supplier.status,
+                    isNext: isNext,
+                    forcePending: forcePending,
+                  ),
                   const SizedBox(height: 8),
                   const Icon(
                     Icons.chevron_right_rounded,

@@ -12,10 +12,12 @@ namespace WasteGlassAPI.Controllers;
 public class AdminController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly RouteScheduler _routeScheduler;
 
-    public AdminController(AppDbContext context)
+    public AdminController(AppDbContext context, RouteScheduler routeScheduler)
     {
         _context = context;
+        _routeScheduler = routeScheduler;
     }
 
     [HttpGet("suppliers")]
@@ -52,22 +54,17 @@ public class AdminController : ControllerBase
             : request.BarcodeValue.Trim().ToUpperInvariant();
         supplier.Status = request.Status.Trim();
 
-        if (request.DistanceKm.HasValue)
-        {
-            var today = DateTime.Today;
-            var routeStop = await _context.RouteStops
-                .Include(item => item.Route)
-                .FirstOrDefaultAsync(item =>
-                    item.SupplierId == normalizedSupplierId &&
-                    item.Route.RouteDate.Date == today);
-
-            if (routeStop is not null)
-            {
-                routeStop.DistanceKm = request.DistanceKm.Value;
-            }
-        }
-
         await _context.SaveChangesAsync();
+
+        var routeIds = await _context.RouteStops
+            .Where(item => item.SupplierId == normalizedSupplierId)
+            .Select(item => item.RouteId)
+            .Distinct()
+            .ToListAsync();
+        foreach (var routeId in routeIds)
+        {
+            await _routeScheduler.OptimizeRouteAsync(routeId);
+        }
 
         return Ok(new { message = "Supplier updated successfully", supplierId = normalizedSupplierId });
     }
@@ -105,7 +102,7 @@ public class AdminController : ControllerBase
 
         if (route is null)
         {
-            return NotFound("Today's route not found.");
+            return NotFound("Route not found.");
         }
 
         var routeStops = await _context.RouteStops
@@ -122,7 +119,7 @@ public class AdminController : ControllerBase
         _context.RouteStops.RemoveRange(routeStops);
         await _context.SaveChangesAsync();
 
-        return Ok(new { message = "Supplier removed from today's route", supplierId = normalizedSupplierId });
+        return Ok(new { message = "Supplier removed from route successfully", supplierId = normalizedSupplierId });
     }
 
     [HttpPost("add-supplier-to-route")]
@@ -131,6 +128,12 @@ public class AdminController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.SupplierId))
         {
             return BadRequest("Supplier ID is required.");
+        }
+
+        if (request.Latitude is < -90 or > 90 ||
+            request.Longitude is < -180 or > 180)
+        {
+            return BadRequest("Valid latitude and longitude are required.");
         }
 
         var supplierId = request.SupplierId.Trim().ToUpperInvariant();
@@ -144,8 +147,8 @@ public class AdminController : ControllerBase
                 SupplierId = supplierId,
                 Name = request.SupplierName.Trim(),
                 Location = request.Location.Trim(),
-                Latitude = 0,
-                Longitude = 0,
+                Latitude = request.Latitude,
+                Longitude = request.Longitude,
                 ExpectedKg = request.ExpectedKg,
                 BarcodeValue = string.IsNullOrWhiteSpace(request.BarcodeValue)
                     ? supplierId
@@ -155,6 +158,17 @@ public class AdminController : ControllerBase
 
             _context.Suppliers.Add(supplier);
             await _context.SaveChangesAsync();
+        }
+        else
+        {
+            supplier.Name = request.SupplierName.Trim();
+            supplier.Location = request.Location.Trim();
+            supplier.Latitude = request.Latitude;
+            supplier.Longitude = request.Longitude;
+            supplier.ExpectedKg = request.ExpectedKg;
+            supplier.BarcodeValue = string.IsNullOrWhiteSpace(request.BarcodeValue)
+                ? supplierId
+                : request.BarcodeValue.Trim().ToUpperInvariant();
         }
 
         // Use the requested date (default today) as the starting point for placement
@@ -172,6 +186,11 @@ public class AdminController : ControllerBase
         var stopCount = await _context.RouteStops
             .CountAsync(item => item.RouteId == route.Id);
         var stopSequence = stopCount + 1;
+        var distanceFromDepotKm = _routeScheduler.CalculateHaversineDistance(
+            RouteScheduler.DepotLatitude,
+            RouteScheduler.DepotLongitude,
+            supplier.Latitude,
+            supplier.Longitude);
 
         var routeStop = await _context.RouteStops.FirstOrDefaultAsync(item =>
             item.RouteId == route.Id &&
@@ -184,7 +203,7 @@ public class AdminController : ControllerBase
                 RouteId = route.Id,
                 SupplierId = supplierId,
                 StopSequence = stopSequence,
-                DistanceKm = request.DistanceKm,
+                DistanceKm = distanceFromDepotKm,
                 Status = "Pending"
             };
 
@@ -193,11 +212,17 @@ public class AdminController : ControllerBase
         else
         {
             routeStop.StopSequence = stopSequence;
-            routeStop.DistanceKm = request.DistanceKm;
+            routeStop.DistanceKm = distanceFromDepotKm;
         }
 
         await _context.SaveChangesAsync();
+        await _routeScheduler.OptimizeRouteAsync(route.Id);
         await RouteScheduler.NormalizeRouteOverflowAsync(_context);
+
+        routeStop = await _context.RouteStops
+            .FirstAsync(item => item.Id == routeStop.Id);
+        await _routeScheduler.OptimizeRouteAsync(routeStop.RouteId);
+        route = await _context.Routes.FirstAsync(item => item.Id == routeStop.RouteId);
 
         return Ok(new
         {
@@ -206,7 +231,8 @@ public class AdminController : ControllerBase
             routeId = route.Id,
             routeStopId = routeStop.Id,
             routeDate = route.RouteDate.ToString("yyyy-MM-dd"),
-            stopSequence = routeStop.StopSequence
+            stopSequence = routeStop.StopSequence,
+            distanceFromDepotKm
         });
     }
 
@@ -261,6 +287,7 @@ public class AdminController : ControllerBase
         }
 
         await _context.SaveChangesAsync();
+        await _routeScheduler.OptimizeRouteAsync(todayRoute.Id);
 
         return Ok(new
         {
@@ -377,8 +404,9 @@ public class AddSupplierToRouteRequest
     public string SupplierId { get; set; } = string.Empty;
     public string SupplierName { get; set; } = string.Empty;
     public string Location { get; set; } = string.Empty;
+    public double Latitude { get; set; }
+    public double Longitude { get; set; }
     public double ExpectedKg { get; set; }
-    public double DistanceKm { get; set; }
     public string BarcodeValue { get; set; } = string.Empty;
     /// <summary>Optional target date (yyyy-MM-dd). Defaults to today when null.</summary>
     public DateTime? RouteDate { get; set; }
@@ -391,7 +419,6 @@ public class UpdateSupplierRequest
     public double Latitude { get; set; }
     public double Longitude { get; set; }
     public double ExpectedKg { get; set; }
-    public double? DistanceKm { get; set; }
     public string BarcodeValue { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
 }

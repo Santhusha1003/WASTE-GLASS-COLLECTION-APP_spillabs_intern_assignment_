@@ -23,14 +23,13 @@ class _ScanScreenState extends State<ScanScreen> {
   final _formKey = GlobalKey<FormState>();
   final _clearGlassController = TextEditingController();
   final _coloredGlassController = TextEditingController();
-  final _manualIdController = TextEditingController();
 
   bool isSupplierVerified = false;
-  bool _isDevModeVerified = false;
   bool _isSaving = false;
   bool _didReadRouteArguments = false;
   int _offlineSavedCount = 0;
   String scannedSupplierId = '';
+  String _verifiedSupplierId = '';
   String _condition = 'Good';
 
   _ScanSupplier _selectedSupplier = const _ScanSupplier(
@@ -63,7 +62,6 @@ class _ScanScreenState extends State<ScanScreen> {
   void dispose() {
     _clearGlassController.dispose();
     _coloredGlassController.dispose();
-    _manualIdController.dispose();
     super.dispose();
   }
 
@@ -84,53 +82,43 @@ class _ScanScreenState extends State<ScanScreen> {
     );
     if (!mounted || scannedValue == null) return;
 
-    final normalized = scannedValue.trim().toUpperCase();
-    setState(() {
-      scannedSupplierId = normalized;
-      isSupplierVerified =
-          normalized == _currentSupplier.expectedBarcode.toUpperCase();
-      _isDevModeVerified = false;
-    });
-
-    if (isSupplierVerified) {
-      _showSnackBar('Supplier Verified ✓');
-    } else {
-      _showSnackBar('Wrong Supplier Barcode', isError: true);
-    }
+    _verifyScannedBarcode(scannedValue);
   }
 
-  void _verifyManualId() {
-    final input = _manualIdController.text.trim().toUpperCase();
-    if (input.isEmpty) return;
-
-    final expected = _currentSupplier.expectedBarcode.toUpperCase();
-    final idMatch = input == _currentSupplier.supplierId.toUpperCase();
-    final barcodeMatch = input == expected;
+  void _verifyScannedBarcode(String barcode) {
+    final normalized = barcode.trim().toUpperCase();
+    final supplierId = _currentSupplier.supplierId.trim().toUpperCase();
+    final barcodeValue = _currentSupplier.barcodeValue.trim().toUpperCase();
+    final verified =
+        normalized == supplierId ||
+        (barcodeValue.isNotEmpty && normalized == barcodeValue);
 
     setState(() {
-      scannedSupplierId = input;
-      isSupplierVerified = idMatch || barcodeMatch;
-      _isDevModeVerified = false;
+      scannedSupplierId = normalized;
+      isSupplierVerified = verified;
+      _verifiedSupplierId = verified ? supplierId : '';
     });
 
-    if (isSupplierVerified) {
-      _showSnackBar('Supplier Verified ✓');
+    if (verified) {
+      _showSnackBar('Supplier Verified');
     } else {
       _showSnackBar(
-        'Supplier ID does not match. Expected: $expected',
+        'Wrong supplier barcode. Please scan the current stop barcode.',
         isError: true,
       );
     }
   }
 
   Future<void> _confirmCollection() async {
-    if (!isSupplierVerified || _isSaving) return;
+    if (!isSupplierVerified || _verifiedSupplierId.isEmpty || _isSaving) {
+      return;
+    }
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     setState(() => _isSaving = true);
     try {
       await LocalDatabase.instance.insertCollection(
-        supplierId: _currentSupplier.supplierId,
+        supplierId: _verifiedSupplierId,
         clearKg: double.parse(_clearGlassController.text.trim()),
         coloredKg: double.parse(_coloredGlassController.text.trim()),
         condition: _condition,
@@ -147,16 +135,6 @@ class _ScanScreenState extends State<ScanScreen> {
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
-  }
-
-  // TODO: Remove DEV MODE before final submission
-  void _skipBarcodeVerificationForDevMode() {
-    setState(() {
-      scannedSupplierId = _currentSupplier.supplierId;
-      isSupplierVerified = true;
-      _isDevModeVerified = true;
-    });
-    _showSnackBar('Supplier Verified (DEV MODE)');
   }
 
   void _showSnackBar(String message, {bool isError = false}) {
@@ -210,24 +188,8 @@ class _ScanScreenState extends State<ScanScreen> {
                     const SizedBox(height: 20),
 
                     // 2. Scan section title
-                    const _SectionLabel(text: 'Scan Supplier Barcode'),
-                    const SizedBox(height: 10),
-
-                    // 3. Compact scan area
-                    _ScanFrameCard(onScan: _openScanner),
-                    const SizedBox(height: 12),
-
-                    // 4. Scan button
-                    _ScanBarcodeButton(onPressed: _openScanner),
-                    const SizedBox(height: 16),
-
-                    // 5. OR divider
-                    const _OrDivider(),
-                    const SizedBox(height: 14),
-
-                    // 6. Manual ID entry
                     _SectionLabel(
-                      text: 'Enter Supplier ID Manually',
+                      text: 'Scan Supplier Barcode',
                       trailing: _offlineSavedCount > 0
                           ? Text(
                               '$_offlineSavedCount saved offline',
@@ -240,45 +202,23 @@ class _ScanScreenState extends State<ScanScreen> {
                           : null,
                     ),
                     const SizedBox(height: 10),
-                    _ManualIdRow(
-                      controller: _manualIdController,
-                      onVerify: _verifyManualId,
-                    ),
-                    const SizedBox(height: 8),
 
-                    // 7. Verification status
+                    // 3. Compact scan area
+                    _ScanFrameCard(onScan: _openScanner),
+                    const SizedBox(height: 12),
+
+                    // 4. Scan button
+                    _ScanBarcodeButton(onPressed: _openScanner),
+                    const SizedBox(height: 12),
+
+                    // 5. Verification status
                     _VerificationBadge(
                       isVerified: isSupplierVerified,
-                      isDevMode: _isDevModeVerified,
                       scannedId: scannedSupplierId,
-                      expectedId: _currentSupplier.expectedBarcode,
-                    ),
-                    const SizedBox(height: 8),
-
-                    // 8. DEV MODE (small, not dominant)
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton.icon(
-                        onPressed: _skipBarcodeVerificationForDevMode,
-                        icon: const Icon(Icons.bug_report_outlined, size: 15),
-                        label: const Text(
-                          'Skip Verification (DEV MODE)',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppColors.mutedText,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                      ),
                     ),
                     const SizedBox(height: 20),
 
-                    // 9. Collection details card
+                    // 6. Collection details card
                     _CollectionDetailsCard(
                       isEnabled: isSupplierVerified,
                       clearGlassController: _clearGlassController,
@@ -292,7 +232,7 @@ class _ScanScreenState extends State<ScanScreen> {
                     ),
                     const SizedBox(height: 20),
 
-                    // 10. Confirm button
+                    // 7. Confirm button
                     _ConfirmButton(
                       isEnabled: isSupplierVerified && !_isSaving,
                       isSaving: _isSaving,
@@ -651,121 +591,19 @@ class _ScanBarcodeButton extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// _OrDivider
-// ═══════════════════════════════════════════════════════════════════════════
-class _OrDivider extends StatelessWidget {
-  const _OrDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        const Expanded(child: Divider(endIndent: 10)),
-        Text(
-          'OR',
-          style: TextStyle(
-            color: AppColors.mutedText.withValues(alpha: 0.8),
-            fontWeight: FontWeight.w700,
-            fontSize: 12,
-          ),
-        ),
-        const Expanded(child: Divider(indent: 10)),
-      ],
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// _ManualIdRow
-// ═══════════════════════════════════════════════════════════════════════════
-class _ManualIdRow extends StatelessWidget {
-  const _ManualIdRow({required this.controller, required this.onVerify});
-  final TextEditingController controller;
-  final VoidCallback onVerify;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: SizedBox(
-            height: 48,
-            child: TextField(
-              controller: controller,
-              textCapitalization: TextCapitalization.characters,
-              decoration: InputDecoration(
-                hintText: 'Enter Supplier ID',
-                hintStyle: const TextStyle(
-                  fontSize: 14,
-                  color: AppColors.mutedText,
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 0,
-                ),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppColors.borderColor),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppColors.borderColor),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: _kGreen, width: 1.5),
-                ),
-              ),
-              onSubmitted: (_) => onVerify(),
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        SizedBox(
-          width: 48,
-          height: 48,
-          child: FilledButton(
-            onPressed: onVerify,
-            style: FilledButton.styleFrom(
-              backgroundColor: _kGreen,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              padding: EdgeInsets.zero,
-              elevation: 0,
-            ),
-            child: const Icon(Icons.arrow_forward_rounded, size: 20),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
 // _VerificationBadge
 // ═══════════════════════════════════════════════════════════════════════════
 class _VerificationBadge extends StatelessWidget {
-  const _VerificationBadge({
-    required this.isVerified,
-    required this.isDevMode,
-    required this.scannedId,
-    required this.expectedId,
-  });
+  const _VerificationBadge({required this.isVerified, required this.scannedId});
 
   final bool isVerified;
-  final bool isDevMode;
   final String scannedId;
-  final String expectedId;
 
   @override
   Widget build(BuildContext context) {
     if (scannedId.isEmpty) {
       return const Text(
-        'Scan or enter the supplier ID to unlock the collection form.',
+        'Scan the current supplier barcode to unlock the collection form.',
         style: TextStyle(
           color: AppColors.mutedText,
           fontSize: 12,
@@ -776,10 +614,8 @@ class _VerificationBadge extends StatelessWidget {
 
     final color = isVerified ? _kGreen : AppColors.warningRed;
     final label = isVerified
-        ? isDevMode
-              ? 'Verified (DEV MODE)'
-              : 'Supplier Verified'
-        : 'Mismatch — Expected: $expectedId';
+        ? 'Supplier Verified'
+        : 'Barcode does not match the current stop';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1262,11 +1098,6 @@ class _ScanSupplier {
   final String location;
   final String distance;
   final String barcodeValue;
-
-  String get expectedBarcode {
-    if (barcodeValue.trim().isNotEmpty) return barcodeValue.trim();
-    return supplierId.trim();
-  }
 
   static String _readValue(
     Map<dynamic, dynamic> map,

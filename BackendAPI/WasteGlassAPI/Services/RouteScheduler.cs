@@ -4,9 +4,112 @@ using WasteGlassRoute = WasteGlassAPI.Models.Route;
 
 namespace WasteGlassAPI.Services;
 
-public static class RouteScheduler
+public class RouteScheduler
 {
     private const int MaxStopsPerRoute = 5;
+    public const double DepotLatitude = 7.2906;
+    public const double DepotLongitude = 80.6337;
+    private const double EarthRadiusKm = 6371;
+    private readonly AppDbContext _context;
+
+    public RouteScheduler(AppDbContext context)
+    {
+        _context = context;
+    }
+
+    public double CalculateHaversineDistance(
+        double lat1,
+        double lon1,
+        double lat2,
+        double lon2)
+    {
+        var latitudeDelta = DegreesToRadians(lat2 - lat1);
+        var longitudeDelta = DegreesToRadians(lon2 - lon1);
+        var latitude1 = DegreesToRadians(lat1);
+        var latitude2 = DegreesToRadians(lat2);
+
+        var a = Math.Pow(Math.Sin(latitudeDelta / 2), 2)
+            + Math.Cos(latitude1)
+            * Math.Cos(latitude2)
+            * Math.Pow(Math.Sin(longitudeDelta / 2), 2);
+        a = Math.Clamp(a, 0, 1);
+
+        var c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+        return Math.Round(EarthRadiusKm * c, 1);
+    }
+
+    // Nearest-neighbor Dijkstra-style ordering using Haversine edge weights.
+    public async Task OptimizeRouteAsync(int routeId)
+    {
+        var route = await _context.Routes
+            .Include(item => item.RouteStops)
+            .ThenInclude(stop => stop.Supplier)
+            .FirstOrDefaultAsync(item => item.Id == routeId);
+
+        if (route is null || route.RouteStops.Count == 0)
+        {
+            return;
+        }
+
+        var unvisited = route.RouteStops.ToList();
+        var currentLatitude = DepotLatitude;
+        var currentLongitude = DepotLongitude;
+        var sequence = 1;
+
+        while (unvisited.Count > 0)
+        {
+            var nearest = unvisited
+                .Select(stop => new
+                {
+                    Stop = stop,
+                    DistanceKm = HasValidCoordinates(stop.Supplier)
+                        ? CalculateHaversineDistance(
+                            currentLatitude,
+                            currentLongitude,
+                            stop.Supplier.Latitude,
+                            stop.Supplier.Longitude)
+                        : 0.0
+                })
+                .OrderBy(candidate => candidate.DistanceKm)
+                .ThenBy(candidate => candidate.Stop.Id)
+                .First();
+
+            var selectedStop = nearest.Stop;
+            selectedStop.StopSequence = sequence++;
+            selectedStop.DistanceKm = nearest.DistanceKm;
+
+            Console.WriteLine(
+                $"Distance for {selectedStop.SupplierId}: {selectedStop.DistanceKm}");
+
+            if (HasValidCoordinates(selectedStop.Supplier))
+            {
+                currentLatitude = selectedStop.Supplier.Latitude;
+                currentLongitude = selectedStop.Supplier.Longitude;
+            }
+
+            unvisited.Remove(selectedStop);
+        }
+
+        await _context.SaveChangesAsync();
+    }
+
+    private static bool HasValidCoordinates(WasteGlassAPI.Models.Supplier supplier)
+    {
+        return supplier.Latitude is >= -90 and <= 90
+            && supplier.Longitude is >= -180 and <= 180
+            && supplier.Latitude != 0
+            && supplier.Longitude != 0;
+    }
+
+    private static double DegreesToRadians(double degrees)
+    {
+        return degrees * Math.PI / 180;
+    }
+
+    private static async Task OptimizeRouteAsync(AppDbContext context, int routeId)
+    {
+        await new RouteScheduler(context).OptimizeRouteAsync(routeId);
+    }
 
     public static async Task<WasteGlassRoute> GetAvailableRouteAsync(AppDbContext context)
     {
@@ -50,7 +153,7 @@ public static class RouteScheduler
             .Include(stop => stop.Route)
             .Where(stop => stop.Route.RouteDate.Date >= today)
             .OrderBy(stop => stop.Route.RouteDate)
-            .ThenBy(stop => stop.StopSequence)
+            .ThenBy(stop => stop.DistanceKm)
             .ThenBy(stop => stop.Id)
             .ToListAsync();
 
@@ -69,6 +172,12 @@ public static class RouteScheduler
         }
 
         await context.SaveChangesAsync();
+
+        foreach (var routeId in stops.Select(stop => stop.RouteId).Distinct())
+        {
+            await OptimizeRouteAsync(context, routeId);
+        }
+
         context.ChangeTracker.Clear();
     }
 

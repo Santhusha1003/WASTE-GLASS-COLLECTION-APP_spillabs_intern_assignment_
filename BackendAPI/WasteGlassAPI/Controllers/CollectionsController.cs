@@ -51,8 +51,7 @@ public class CollectionsController : ControllerBase
 
         _context.CollectionRecords.Add(record);
 
-        // Update only today's RouteStop status — do NOT touch global Supplier.Status
-        // so future/past route dates are not affected
+        // Update only today's matching RouteStop; past and future stops are untouched.
         var today = DateTime.Today;
         var routeStop = await _context.RouteStops
             .Include(item => item.Route)
@@ -63,6 +62,13 @@ public class CollectionsController : ControllerBase
         if (routeStop is not null)
         {
             routeStop.Status = "Collected";
+
+            var supplier = await _context.Suppliers
+                .FirstOrDefaultAsync(item => item.SupplierId == record.SupplierId);
+            if (supplier is not null)
+            {
+                supplier.Status = "Collected";
+            }
         }
 
         await _context.SaveChangesAsync();

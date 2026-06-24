@@ -1,2 +1,7 @@
 {
+    "java.jdt.ls.java.home": "/Applications/Android Studio.app/Contents/jbr/Contents/Home",
+    "java.import.gradle.java.home": "/Applications/Android Studio.app/Contents/jbr/Contents/Home",
+    "terminal.integrated.env.osx": {
+        "JAVA_HOME": "/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+    }
 }
