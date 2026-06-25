@@ -147,33 +147,54 @@ public class RouteScheduler
     public static async Task NormalizeRouteOverflowAsync(AppDbContext context)
     {
         var today = DateTime.Today;
-
-        // Only normalize stops from today onwards — never touch past routes
-        var stops = await context.RouteStops
-            .Include(stop => stop.Route)
-            .Where(stop => stop.Route.RouteDate.Date >= today)
-            .OrderBy(stop => stop.Route.RouteDate)
-            .ThenBy(stop => stop.DistanceKm)
-            .ThenBy(stop => stop.Id)
+        var routes = await context.Routes
+            .Include(route => route.RouteStops)
+            .Where(route => route.RouteDate.Date >= today)
+            .OrderBy(route => route.RouteDate)
             .ToListAsync();
 
-        if (stops.Count == 0)
+        var affectedRouteIds = new HashSet<int>();
+
+        foreach (var route in routes)
         {
-            return;
+            var overflow = route.RouteStops
+                .OrderBy(stop => stop.StopSequence)
+                .ThenBy(stop => stop.Id)
+                .Skip(MaxStopsPerRoute)
+                .ToList();
+
+            foreach (var stop in overflow)
+            {
+                var targetDate = route.RouteDate.Date.AddDays(1);
+                WasteGlassRoute targetRoute;
+
+                while (true)
+                {
+                    targetRoute = await FindOrCreateRouteAsync(context, targetDate);
+                    var targetStopCount = await context.RouteStops
+                        .CountAsync(item => item.RouteId == targetRoute.Id);
+                    var pendingMoves = context.ChangeTracker.Entries<Models.RouteStop>()
+                        .Count(entry => entry.Entity.RouteId == targetRoute.Id
+                            && entry.State != EntityState.Deleted);
+
+                    if (Math.Max(targetStopCount, pendingMoves) < MaxStopsPerRoute)
+                    {
+                        break;
+                    }
+
+                    targetDate = targetDate.AddDays(1);
+                }
+
+                stop.RouteId = targetRoute.Id;
+                stop.StopSequence = await context.RouteStops
+                    .CountAsync(item => item.RouteId == targetRoute.Id) + 1;
+                affectedRouteIds.Add(route.Id);
+                affectedRouteIds.Add(targetRoute.Id);
+                await context.SaveChangesAsync();
+            }
         }
 
-        for (var index = 0; index < stops.Count; index++)
-        {
-            var targetDate = today.AddDays(index / MaxStopsPerRoute);
-            var targetRoute = await FindOrCreateRouteAsync(context, targetDate);
-
-            stops[index].RouteId = targetRoute.Id;
-            stops[index].StopSequence = (index % MaxStopsPerRoute) + 1;
-        }
-
-        await context.SaveChangesAsync();
-
-        foreach (var routeId in stops.Select(stop => stop.RouteId).Distinct())
+        foreach (var routeId in affectedRouteIds)
         {
             await OptimizeRouteAsync(context, routeId);
         }

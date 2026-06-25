@@ -40,43 +40,45 @@ public class CollectionsController : ControllerBase
             return BadRequest("condition is required.");
         }
 
+        var supplierId = request.SupplierId.Trim().ToUpperInvariant();
+        var today = DateTime.Today.Date;
+        var todayRoute = await _context.Routes
+            .FirstOrDefaultAsync(route => route.RouteDate.Date == today);
+
+        if (todayRoute is null)
+        {
+            return NotFound("No route found for today.");
+        }
+
+        var routeStop = await _context.RouteStops
+            .FirstOrDefaultAsync(stop =>
+                stop.RouteId == todayRoute.Id &&
+                stop.SupplierId == supplierId);
+
+        if (routeStop is null)
+        {
+            return NotFound($"Supplier {supplierId} is not a stop on today's route.");
+        }
+
         var record = new CollectionRecord
         {
-            SupplierId = request.SupplierId.Trim().ToUpperInvariant(),
+            SupplierId = supplierId,
             ClearKg = request.ClearKg,
             ColoredKg = request.ColoredKg,
             Condition = request.Condition.Trim(),
-            Timestamp = request.Timestamp == default ? DateTime.UtcNow : request.Timestamp
+            Timestamp = request.Timestamp == default ? DateTime.UtcNow : request.Timestamp,
+            RouteDate = today
         };
 
         _context.CollectionRecords.Add(record);
-
-        // Update only today's matching RouteStop; past and future stops are untouched.
-        var today = DateTime.Today;
-        var routeStop = await _context.RouteStops
-            .Include(item => item.Route)
-            .FirstOrDefaultAsync(item =>
-                item.SupplierId == record.SupplierId &&
-                item.Route.RouteDate.Date == today);
-
-        if (routeStop is not null)
-        {
-            routeStop.Status = "Collected";
-
-            var supplier = await _context.Suppliers
-                .FirstOrDefaultAsync(item => item.SupplierId == record.SupplierId);
-            if (supplier is not null)
-            {
-                supplier.Status = "Collected";
-            }
-        }
+        routeStop.Status = "Collected";
 
         await _context.SaveChangesAsync();
 
         return Ok(new
         {
             success = true,
-            supplierId = record.SupplierId,
+            supplierId,
             status = "Collected",
             message = "Collection saved successfully"
         });

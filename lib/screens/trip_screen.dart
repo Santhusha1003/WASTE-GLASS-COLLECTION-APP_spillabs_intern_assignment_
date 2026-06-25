@@ -101,9 +101,13 @@ class _TripScreenState extends State<TripScreen> with WidgetsBindingObserver {
     if (currentDay != _loadedDay) _loadTodayAndTomorrowRoutes();
   }
 
-  List<SupplierModel> _mapStops(Map<String, dynamic> route) {
+  List<SupplierModel> _mapStops(
+    Map<String, dynamic> route,
+    String expectedRouteDate,
+  ) {
+    if (route['routeDate']?.toString() != expectedRouteDate) return [];
     final stops = route['stops'] as List<dynamic>? ?? [];
-    return stops.asMap().entries.map((entry) {
+    return stops.take(5).toList().asMap().entries.map((entry) {
       final item = entry.value;
       return SupplierModel(
         supplierId: item['supplierId']?.toString() ?? '',
@@ -118,7 +122,9 @@ class _TripScreenState extends State<TripScreen> with WidgetsBindingObserver {
     }).toList();
   }
 
-  Future<void> _loadTodayAndTomorrowRoutes() async {
+  Future<void> _loadTodayAndTomorrowRoutes({
+    bool showCompletionDialog = true,
+  }) async {
     setState(() {
       isLoading = true;
       _completionDialogShown = false;
@@ -139,13 +145,19 @@ class _TripScreenState extends State<TripScreen> with WidgetsBindingObserver {
 
       setState(() {
         _loadedDay = today;
-        todaySuppliers = _mapStops(results[0] as Map<String, dynamic>);
-        tomorrowSuppliers = _mapStops(results[1] as Map<String, dynamic>);
+        todaySuppliers = _mapStops(
+          results[0] as Map<String, dynamic>,
+          todayDate,
+        );
+        tomorrowSuppliers = _mapStops(
+          results[1] as Map<String, dynamic>,
+          tomorrowDate,
+        );
         tripReport = results[2] as Map<String, dynamic>;
         isLoading = false;
       });
 
-      _showCompletionDialogIfNeeded();
+      if (showCompletionDialog) _showCompletionDialogIfNeeded();
     } catch (error) {
       debugPrint('Load route error: $error');
       if (!mounted) return;
@@ -169,9 +181,6 @@ class _TripScreenState extends State<TripScreen> with WidgetsBindingObserver {
   double get totalCollectedKg =>
       (tripReport['totalCollected'] as num?)?.toDouble() ?? 0;
 
-  double get tripProgress =>
-      todaySuppliers.isEmpty ? 0 : completedStops / todaySuppliers.length * 100;
-
   double get totalDistance =>
       todaySuppliers.fold<double>(0, (sum, s) => sum + s.distanceKm);
 
@@ -179,6 +188,9 @@ class _TripScreenState extends State<TripScreen> with WidgetsBindingObserver {
 
   /// Returns the index of the first pending stop, or -1.
   int get _nextStopIndex {
+    for (var i = 0; i < todaySuppliers.length; i++) {
+      if (todaySuppliers[i].status.toLowerCase() == 'next') return i;
+    }
     for (var i = 0; i < todaySuppliers.length; i++) {
       if (todaySuppliers[i].status.toLowerCase() != 'collected') return i;
     }
@@ -214,7 +226,7 @@ class _TripScreenState extends State<TripScreen> with WidgetsBindingObserver {
       '/scan',
       arguments: todaySuppliers[idx].toMap(),
     );
-    if (result == true && mounted) await _loadTodayAndTomorrowRoutes();
+    await _handleScanResult(result);
   }
 
   Future<void> _openScanForSupplier(SupplierModel supplier) async {
@@ -223,12 +235,25 @@ class _TripScreenState extends State<TripScreen> with WidgetsBindingObserver {
       '/scan',
       arguments: supplier.toMap(),
     );
-    if (result == true && mounted) await _loadTodayAndTomorrowRoutes();
+    await _handleScanResult(result);
+  }
+
+  Future<void> _handleScanResult(Object? result) async {
+    if (result != true || !mounted) return;
+
+    await _loadTodayAndTomorrowRoutes(showCompletionDialog: false);
+    if (!mounted) return;
+
+    if (allCollected) {
+      await _openReport();
+    }
   }
 
   Future<void> _openReport() async {
     await Navigator.pushNamed(context, '/report');
-    if (mounted) await _loadTodayAndTomorrowRoutes();
+    if (mounted) {
+      await _loadTodayAndTomorrowRoutes(showCompletionDialog: false);
+    }
   }
 
   void _showCompletionDialogIfNeeded() {
@@ -508,27 +533,12 @@ class _TripScreenState extends State<TripScreen> with WidgetsBindingObserver {
                             ),
                             const SizedBox(width: 12),
                             RouteSummaryCard(
-                              icon: Icons.donut_large_outlined,
-                              label: 'Trip Progress',
-                              value: isLoading
-                                  ? '—'
-                                  : '${tripProgress.toStringAsFixed(0)}%',
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            RouteSummaryCard(
                               icon: Icons.map_outlined,
                               label: 'Total Distance',
                               value: isLoading
                                   ? '—'
                                   : '${totalDistance.toStringAsFixed(1)} km',
                             ),
-                            const SizedBox(width: 12),
-                            const Expanded(child: SizedBox.shrink()),
                           ],
                         ),
 

@@ -8,4 +8,5 @@ public class CollectionRecord
     public double ColoredKg { get; set; }
     public string Condition { get; set; } = string.Empty;
     public DateTime Timestamp { get; set; }
+    public DateTime RouteDate { get; set; }
 }

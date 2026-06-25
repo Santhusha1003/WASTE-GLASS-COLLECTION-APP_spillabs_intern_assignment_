@@ -66,7 +66,10 @@ public class RoutesController : ControllerBase
             .Take(5)
             .ToList();
         var nextStopId = orderedStops
-            .FirstOrDefault(stop => stop.Status != "Collected")?.Id;
+            .FirstOrDefault(stop => !string.Equals(
+                stop.Status,
+                "Collected",
+                StringComparison.OrdinalIgnoreCase))?.Id;
 
         return new
         {
@@ -87,7 +90,10 @@ public class RoutesController : ControllerBase
                     distanceKm = stop.DistanceKm,
                     barcodeValue = stop.Supplier.BarcodeValue,
                     // Route display status comes only from this date's RouteStop.
-                    status = stop.Status == "Collected"
+                    status = string.Equals(
+                        stop.Status,
+                        "Collected",
+                        StringComparison.OrdinalIgnoreCase)
                         ? "Collected"
                         : stop.Id == nextStopId ? "Next" : "Pending"
                 })

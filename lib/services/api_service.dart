@@ -148,8 +148,14 @@ class ApiService {
       return response.statusCode != null &&
           response.statusCode! >= 200 &&
           response.statusCode! < 300;
+    } on DioException catch (error) {
+      debugPrint(
+        'API createCollection error (${error.response?.statusCode}): '
+        '${error.response?.data ?? error.message}',
+      );
+      return false;
     } catch (error) {
-      debugPrint('API createCollection error: $error');
+      debugPrint('API createCollection unexpected error: $error');
       return false;
     }
   }

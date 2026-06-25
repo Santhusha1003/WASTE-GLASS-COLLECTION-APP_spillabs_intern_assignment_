@@ -31,13 +31,9 @@ public class ReportController : ControllerBase
             return Ok(new ReportDto());
         }
 
-        // Only count collection records whose timestamp falls on today's date
-        var todayStart = today.ToUniversalTime();
-        var todayEnd   = today.AddDays(1).ToUniversalTime();
-
         var records = await _context.CollectionRecords
             .AsNoTracking()
-            .Where(record => record.Timestamp >= todayStart && record.Timestamp < todayEnd)
+            .Where(record => record.RouteDate.Date == today)
             .ToListAsync();
 
         var supplierSummaries = route.RouteStops
@@ -51,7 +47,10 @@ public class ReportController : ControllerBase
                     .Sum(record => record.ClearKg + record.ColoredKg);
 
                 // Status from RouteStop, not global Supplier.Status
-                var status = routeStop.Status == "Collected" ? "Collected"
+                var status = string.Equals(
+                        routeStop.Status,
+                        "Collected",
+                        StringComparison.OrdinalIgnoreCase) ? "Collected"
                     : collectedKg > 0 ? "Collected"
                     : "Pending";
 

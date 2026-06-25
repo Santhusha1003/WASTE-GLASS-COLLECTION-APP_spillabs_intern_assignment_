@@ -47,6 +47,28 @@ try
     using var scope = app.Services.CreateScope();
     var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await context.Database.EnsureCreatedAsync();
+
+    // EnsureCreated does not evolve an existing SQLite database. Add the
+    // collection route date for existing local/Render databases; new databases
+    // receive it directly from the EF model.
+    try
+    {
+        await context.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE CollectionRecords ADD COLUMN RouteDate TEXT NOT NULL DEFAULT '0001-01-01 00:00:00'");
+    }
+    catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode == 1 &&
+        ex.Message.Contains("duplicate column name", StringComparison.OrdinalIgnoreCase))
+    {
+        // Column already exists.
+    }
+
+    await context.Database.ExecuteSqlRawAsync("""
+        UPDATE CollectionRecords
+        SET RouteDate = substr(Timestamp, 1, 10) || ' 00:00:00'
+        WHERE RouteDate = '0001-01-01 00:00:00'
+           OR RouteDate = '0001-01-01T00:00:00'
+        """);
+
     await DatabaseSeeder.SeedAsync(context);
 }
 catch (Exception ex)
