@@ -169,6 +169,14 @@ dotnet run
 https://github.com/Santhusha1003/WASTE-GLASS-COLLECTION-APP_spillabs_intern_assignment_
 
 ---
+## Demo Video
+
+A complete demonstration of the application, including route loading, barcode scanning, collection process, trip reporting, and data synchronization, is available at the following Google Drive link:
+
+**Google Drive:**
+https://drive.google.com/file/d/17ZyVbkQ7-WiKxkadU1GfdvBF6K8PgDEn/view?usp=drive_link
+
+---
 
 ## Author
 
